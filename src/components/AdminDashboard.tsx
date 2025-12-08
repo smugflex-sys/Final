@@ -1,0 +1,312 @@
+import React, { useState } from "react";
+import { 
+  LayoutDashboard, Users, UserPlus, GraduationCap,
+  CheckCircle, Bell, Settings, FileText,
+  Link as LinkIcon, BookOpen, List, Award, BarChart3, MessageSquare, Database, DollarSign, Activity, Calendar, Clock
+} from "lucide-react";
+import { DashboardSidebar } from "./DashboardSidebar";
+import { DashboardTopBar } from "./DashboardTopBar";
+import { Card, CardContent, CardHeader } from "./ui/card";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { RegisterUserPage } from "./admin/RegisterUserPage";
+import { ManageStudentsPage } from "./admin/ManageStudentsPage";
+import { ManageUsersPage } from "./admin/ManageUsersPage";
+import { NotificationSystemPage } from "./admin/NotificationSystemPage";
+import { SystemSettingsPage } from "./admin/SystemSettingsPage";
+import { LinkStudentParentPage } from "./admin/LinkStudentParentPage";
+import { ManageClassesPage } from "./admin/ManageClassesPage";
+import { ManageSubjectsPage } from "./admin/ManageSubjectsPage";
+import { ManageTeacherAssignmentsPage } from "./admin/ManageTeacherAssignmentsPage";
+import { PromotionSystemPage } from "./admin/PromotionSystemPage";
+import { ResultsManagementPage } from "./admin/ResultsManagementPage";
+import { AttendanceReportsPage } from "./admin/AttendanceReportsPage";
+import { ExamTimetablePage } from "./admin/ExamTimetablePage";
+import { NotificationsPage } from "./NotificationsPage";
+import { DataBackupPage } from "./admin/DataBackupPage";
+import { ActivityLogsPage } from "./admin/ActivityLogsPage";
+import { FeeManagementPage } from "./admin/FeeManagementPage";
+import { SignatureSettingsPage } from "./admin/SignatureSettingsPage";
+import { useSchool } from "../contexts/SchoolContext";
+import { useNotificationListener } from "../contexts/NotificationService";
+
+interface AdminDashboardProps {
+  onLogout: () => void;
+}
+
+export function AdminDashboard({ onLogout }: AdminDashboardProps) {
+  const { students, teachers, getPendingApprovals, currentUser, getUnreadNotifications, checkUserPermissionAPI, currentAcademicYear, currentTerm } = useSchool();
+  const [activeItem, setActiveItem] = useState("dashboard");
+  
+  // Real-time notification listener for admins
+  useNotificationListener(currentUser?.role, currentUser?.id);
+
+  // Get real statistics
+  const activeStudents = students.filter(s => s && s.status && s.status === 'Active').length;
+  const activeTeachers = teachers.filter(t => t && t.status && t.status === 'Active').length;
+  const pendingResults = getPendingApprovals().length;
+  const unreadNotifications = getUnreadNotifications();
+
+  // Permission checks
+  const canManageUsers = currentUser ? checkUserPermissionAPI(currentUser.role, 'create_users') : false;
+  const canManageStudents = currentUser ? checkUserPermissionAPI(currentUser.role, 'create_students') : false;
+  const canManageAcademics = currentUser ? checkUserPermissionAPI(currentUser.role, 'manage_classes') : false;
+  const canManageFinancial = currentUser ? checkUserPermissionAPI(currentUser.role, 'manage_fees') : false;
+  const canViewReports = currentUser ? checkUserPermissionAPI(currentUser.role, 'view_student_reports') : false;
+  const canManageSystem = currentUser ? checkUserPermissionAPI(currentUser.role, 'manage_settings') : false;
+
+  const sidebarItems = [
+    // Main Dashboard
+    { icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard", id: "dashboard", permission: null },
+    
+    // User Management - Consolidated
+    { icon: <UserPlus className="w-5 h-5" />, label: "Register User", id: "register-user", permission: 'create_users' },
+    { icon: <Users className="w-5 h-5" />, label: "Manage Users", id: "manage-users", permission: 'read_users' },
+    
+    // Student Management
+    { icon: <Users className="w-5 h-5" />, label: "Manage Students", id: "manage-students", permission: 'read_students' },
+    { icon: <LinkIcon className="w-5 h-5" />, label: "Link Student-Parent", id: "link-student-parent", permission: 'link_students' },
+    
+    // Academic Management
+    { icon: <BookOpen className="w-5 h-5" />, label: "Manage Classes", id: "manage-classes", permission: 'manage_classes' },
+    { icon: <List className="w-5 h-5" />, label: "Manage Subjects", id: "manage-subjects", permission: 'manage_subjects' },
+    { icon: <Award className="w-5 h-5" />, label: "Teacher Assignments", id: "teacher-assignments", permission: 'assign_subjects' },
+    { icon: <BarChart3 className="w-5 h-5" />, label: "Promotion System", id: "promotion-system", permission: 'manage_students' },
+    
+    // Results Management
+    { icon: <Database className="w-5 h-5" />, label: "Results Management", id: "results-management", permission: 'manage_exams' },
+        
+    // Attendance & Timetable
+    { icon: <Clock className="w-5 h-5" />, label: "Attendance Reports", id: "attendance-reports", permission: 'view_reports' },
+    { icon: <Calendar className="w-5 h-5" />, label: "Exam Timetable", id: "exam-timetable", permission: 'manage_timetable' },
+    
+    // Financial Management
+    { icon: <DollarSign className="w-5 h-5" />, label: "Fee Management", id: "fee-management", permission: 'manage_fees' },
+    
+    // Communication & Settings
+    { icon: <MessageSquare className="w-5 h-5" />, label: "Notifications", id: "send-notifications", permission: 'manage_notifications' },
+    { icon: <Bell className="w-5 h-5" />, label: "View Notifications", id: "notifications", permission: null },
+    { icon: <FileText className="w-5 h-5" />, label: "Signature Settings", id: "signature-settings", permission: 'manage_settings' },
+    { icon: <Activity className="w-5 h-5" />, label: "Activity Logs", id: "activity-logs", permission: 'view_logs' },
+    { icon: <Database className="w-5 h-5" />, label: "Data Backup", id: "data-backup", permission: 'manage_settings' },
+        { icon: <Settings className="w-5 h-5" />, label: "Settings", id: "settings", permission: 'manage_settings' },
+  ].filter(item => !item.permission || (currentUser && checkUserPermissionAPI(currentUser.role, item.permission)));
+
+  const handleItemClick = (id: string) => {
+    if (id === "logout") {
+      onLogout();
+    } else {
+      setActiveItem(id);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F4F6F9]">
+      <DashboardSidebar
+        items={sidebarItems}
+        activeItem={activeItem}
+        onItemClick={handleItemClick}
+      />
+
+      <div className="lg:pl-64">
+        <DashboardTopBar
+          userName="Administrator"
+          userRole="System Admin"
+          notificationCount={unreadNotifications.length}
+          onLogout={onLogout}
+        />
+
+        <main className="p-4 md:p-6 max-w-7xl mx-auto">
+          {activeItem === "dashboard" && (
+            <div className="space-y-6">
+              <div className="mb-6">
+                <h1 className="text-[#1F2937] mb-2">Admin Dashboard</h1>
+                <p className="text-[#6B7280]">System Overview & Management</p>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card 
+                  className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical hover:shadow-clinical-lg transition-all hover-lift group cursor-pointer"
+                  onClick={() => setActiveItem('manage-students')}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[#6B7280] text-sm">Total Students</p>
+                      <Users className="w-5 h-5 text-[#3B82F6] group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-[#1F2937] mb-1 font-semibold">{activeStudents}</p>
+                    <p className="text-xs text-[#10B981]">Active students</p>
+                  </CardContent>
+                </Card>
+
+                <Card 
+                  className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical hover:shadow-clinical-lg transition-all hover-lift group cursor-pointer"
+                  onClick={() => setActiveItem('manage-users')}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[#6B7280] text-sm">Teaching Staff</p>
+                      <GraduationCap className="w-5 h-5 text-[#10B981] group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-[#1F2937] mb-1 font-semibold">{activeTeachers}</p>
+                    <p className="text-xs text-[#10B981]">Active teachers</p>
+                  </CardContent>
+                </Card>
+
+                <Card 
+                  className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical hover:shadow-clinical-lg transition-all hover-lift group cursor-pointer"
+                  onClick={() => setActiveItem('results-management')}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[#6B7280] text-sm">Pending Results</p>
+                      <FileText className="w-5 h-5 text-[#F59E0B] group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-[#1F2937] mb-1 font-semibold">{pendingResults}</p>
+                    <p className="text-xs text-[#F59E0B]">{pendingResults > 0 ? 'Awaiting approval' : 'All approved'}</p>
+                  </CardContent>
+                </Card>
+
+                <Card 
+                  className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical hover:shadow-clinical-lg transition-all hover-lift group cursor-pointer"
+                  onClick={() => setActiveItem('notifications')}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-[#6B7280] text-sm">Notifications</p>
+                      <Bell className="w-5 h-5 text-[#3B82F6] group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-[#1F2937] mb-1 font-semibold">{unreadNotifications.length}</p>
+                    <p className="text-xs text-[#6B7280]">Unread messages</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Active Session */}
+              <Card className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical">
+                <CardHeader className="bg-[#3B82F6] rounded-t-lg p-4 border-b border-[#E5E7EB]">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-white font-semibold">Active Session & Term</h3>
+                    <Badge className="bg-[#10B981] text-white border-0 text-xs">Active</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <div className="grid md:grid-cols-3 gap-3">
+                    <div className="p-3 bg-[#F9FAFB] rounded-lg border border-[#E5E7EB]">
+                      <p className="text-[#6B7280] mb-1 text-sm">Academic Session</p>
+                      <p className="text-[#1F2937] font-medium">{currentAcademicYear}</p>
+                    </div>
+                    <div className="p-3 bg-[#F9FAFB] rounded-lg border border-[#E5E7EB]">
+                      <p className="text-[#6B7280] mb-1 text-sm">Current Term</p>
+                      <p className="text-[#1F2937] font-medium">{currentTerm}</p>
+                    </div>
+                    <div className="p-3 bg-[#F9FAFB] rounded-lg border border-[#E5E7EB]">
+                      <p className="text-[#6B7280] mb-1 text-sm">Status</p>
+                      <p className="text-[#10B981] font-medium">In Progress</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Quick Actions Info */}
+              <Card className="rounded-lg bg-gradient-to-r from-[#3B82F6]/10 to-[#2563EB]/5 border border-[#3B82F6]/20">
+                <CardContent className="p-5">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="w-6 h-6 text-[#3B82F6] mt-1 flex-shrink-0" />
+                    <div>
+                      <p className="text-[#1F2937] font-medium mb-2">Quick Actions Available</p>
+                      <div className="grid md:grid-cols-3 gap-3">
+                        <div className="p-3 bg-white rounded-lg border border-[#E5E7EB]">
+                          <p className="text-[#6B7280] text-sm">Use floating buttons (bottom right) for quick access to:</p>
+                          <ul className="text-xs text-[#1F2937] mt-2 space-y-1">
+                            <li>• Register New User</li>
+                            <li>• Add Student</li>
+                            <li>• Results Management</li>
+                          </ul>
+                        </div>
+                        <div className="p-3 bg-white rounded-lg border border-[#E5E7EB]">
+                          <p className="text-[#6B7280] text-sm">Use sidebar menu to:</p>
+                          <ul className="text-xs text-[#1F2937] mt-2 space-y-1">
+                            <li>• Manage all users</li>
+                            <li>• Configure classes & subjects</li>
+                            <li>• Set teacher assignments</li>
+                          </ul>
+                        </div>
+                        <div className="p-3 bg-white rounded-lg border border-[#E5E7EB]">
+                          <p className="text-[#6B7280] text-sm">System features:</p>
+                          <ul className="text-xs text-[#1F2937] mt-2 space-y-1">
+                            <li>• Real-time notifications</li>
+                            <li>• Student promotion</li>
+                            <li>• Results approval workflow</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Quick Actions */}
+              <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-30">
+                <Button 
+                  onClick={() => setActiveItem("register-user")}
+                  className="w-12 h-12 rounded-lg bg-[#F59E0B] hover:bg-[#D97706] shadow-lg hover:shadow-xl transition-all hover-lift"
+                  title="Register User"
+                >
+                  <UserPlus className="w-5 h-5 text-white" />
+                </Button>
+                <Button 
+                  onClick={() => setActiveItem("results-management")}
+                  className="w-12 h-12 rounded-lg bg-[#10B981] hover:bg-[#059669] shadow-lg hover:shadow-xl transition-all hover-lift"
+                  title="Results Management"
+                >
+                  <Database className="w-5 h-5 text-white" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {activeItem === "register-user" && <RegisterUserPage />}
+          {activeItem === "manage-students" && <ManageStudentsPage onNavigateToLink={() => setActiveItem("link-student-parent")} />}
+          {activeItem === "manage-users" && <ManageUsersPage />}
+          {activeItem === "manage-classes" && <ManageClassesPage />}
+          {activeItem === "manage-subjects" && <ManageSubjectsPage />}
+          {activeItem === "teacher-assignments" && <ManageTeacherAssignmentsPage />}
+          {activeItem === "promotion-system" && <PromotionSystemPage />}
+          {activeItem === "link-student-parent" && <LinkStudentParentPage />}
+          {activeItem === "fee-management" && <FeeManagementPage />}
+          {activeItem === "send-notifications" && <NotificationSystemPage />}
+          {activeItem === "notifications" && <NotificationsPage />}
+          {activeItem === "activity-logs" && <ActivityLogsPage />}
+          {activeItem === "data-backup" && <DataBackupPage />}
+          {activeItem === "settings" && <SystemSettingsPage />}
+          {activeItem === "attendance-reports" && <AttendanceReportsPage />}
+          {activeItem === "exam-timetable" && <ExamTimetablePage />}
+          {activeItem === "results-management" && <ResultsManagementPage />}
+                    {activeItem === "signature-settings" && <SignatureSettingsPage />}
+                    
+          {!["dashboard", "register-user", "manage-students", "manage-users", "manage-classes", "manage-subjects", "teacher-assignments", "promotion-system", "link-student-parent", "fee-management", "send-notifications", "notifications", "activity-logs", "data-backup", "settings", "attendance-reports", "exam-timetable", "results-management", "signature-settings"].includes(activeItem) && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-center min-h-[400px]">
+                <Card className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical max-w-md w-full">
+                  <CardContent className="p-12 text-center">
+                    <div className="w-16 h-16 rounded-lg bg-[#3B82F6] flex items-center justify-center mx-auto mb-4">
+                      {sidebarItems.find(item => item.id === activeItem)?.icon}
+                    </div>
+                    <h3 className="text-[#1F2937] mb-3 font-semibold">
+                      {sidebarItems.find(item => item.id === activeItem)?.label}
+                    </h3>
+                    <p className="text-[#6B7280]">
+                      This section contains the functionality for {sidebarItems.find(item => item.id === activeItem)?.label.toLowerCase()}.
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}

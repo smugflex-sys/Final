@@ -1,0 +1,1690 @@
+ import { useState, useMemo, useCallback, useEffect } from "react";
+import { FileText, Send, Eye, Download, AlertCircle, CheckCircle, Edit, BookOpen, Users, ChevronLeft, Award, RefreshCw, ArrowLeft } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
+import { Button } from "../ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Label } from "../ui/label";
+import { Textarea } from "../ui/textarea";
+import { Badge } from "../ui/badge";
+import { Avatar, AvatarFallback } from "../ui/avatar";
+import { useSchool } from "../../contexts/SchoolContext";
+import { toast } from "sonner";
+
+// Auto-comment generation system
+const commentTemplates = {
+  excellent: [
+    "Outstanding performance! Shows exceptional understanding and mastery of all subjects.",
+    "Brilliant academic achievement. Maintains excellent standards across all areas.",
+    "Exceptional student who demonstrates outstanding intellectual capacity and diligence.",
+    "Remarkable performance! A true academic star with exemplary conduct.",
+    "Outstanding achievement! Consistently exceeds expectations in all subjects.",
+    "Exceptional work! Demonstrates superior analytical thinking and problem-solving skills.",
+    "Brilliant results! Shows remarkable dedication to academic excellence.",
+    "Outstanding scholar! Maintains highest standards in all academic pursuits.",
+    "Exceptional performance! A model student with outstanding intellectual abilities.",
+    "Brilliant achievement! Demonstrates exceptional mastery of course material."
+  ],
+  veryGood: [
+    "Very good performance. Shows strong understanding and consistent effort.",
+    "Commendable academic achievement with room for further improvement.",
+    "Impressive performance! Demonstrates strong analytical skills and dedication.",
+    "Very good result! Shows promise and potential for continued excellence.",
+    "Strong academic performance with consistent effort and good understanding.",
+    "Excellent work! Displays solid grasp of concepts and good analytical abilities.",
+    "Commendable results! Shows strong academic capabilities and dedication.",
+    "Very good achievement! Demonstrates consistent effort and understanding.",
+    "Strong performance! Shows good command of subject matter and analytical skills.",
+    "Impressive work! Displays academic potential and consistent dedication."
+  ],
+  good: [
+    "Good performance. Shows satisfactory understanding and steady progress.",
+    "Satisfactory academic achievement with areas for improvement.",
+    "Good effort shown. Consistent progress noted throughout the term.",
+    "Decent performance! With more effort, could achieve much higher results.",
+    "Fair performance showing understanding of core concepts.",
+    "Good work! Demonstrates adequate understanding and room for growth.",
+    "Satisfactory results! Shows steady progress and basic comprehension.",
+    "Decent achievement! Could benefit from additional study and practice.",
+    "Fair performance! Shows understanding of fundamental concepts.",
+    "Good effort! Demonstrates potential for improvement with dedicated work."
+  ],
+  average: [
+    "Average performance. Needs to put in more effort to improve.",
+    "Satisfactory but needs improvement in several areas.",
+    "Fair performance. Could benefit from additional study and practice.",
+    "Average result. More dedication needed for better performance.",
+    "Moderate performance showing need for increased effort.",
+    "Fair work! Requires more dedication and consistent study habits.",
+    "Average results! Needs to focus more on academic responsibilities.",
+    "Satisfactory performance! Could improve with better study methods.",
+    "Moderate achievement! Requires increased effort and attention.",
+    "Fair work! Needs to develop better study habits and consistency."
+  ],
+  belowAverage: [
+    "Below average performance. Requires significant improvement and attention.",
+    "Needs considerable improvement in academic performance and attitude.",
+    "Poor performance. Must show more commitment to studies.",
+    "Below expected standards. Immediate improvement required.",
+    "Unsatisfactory performance requiring urgent attention and support.",
+    "Weak performance! Needs serious attention to academic responsibilities.",
+    "Below average results! Requires immediate intervention and support.",
+    "Poor work! Must demonstrate greater commitment to learning.",
+    "Unsatisfactory achievement! Needs comprehensive academic support.",
+    "Weak performance! Requires urgent attention to study habits."
+  ],
+  poor: [
+    "Poor performance. Requires immediate intervention and support.",
+    "Very poor academic result. Needs serious attention to studies.",
+    "Unsatisfactory performance in all aspects. Major improvement needed.",
+    "Extremely poor result. Requires comprehensive academic support.",
+    "Failing performance. Must seek help and show dramatic improvement.",
+    "Very weak performance! Needs immediate academic intervention.",
+    "Extremely poor results! Requires comprehensive support and guidance.",
+    "Failing work! Must demonstrate complete commitment to improvement.",
+    "Very poor achievement! Needs urgent and sustained academic support.",
+    "Extremely weak performance! Requires immediate intervention and dedication."
+  ]
+};
+
+const positionComments = {
+  top: [
+    "Outstanding class position! Shows exceptional academic ability.",
+    "Excellent class ranking! Among the best performers in class.",
+    "Brilliant class position! Demonstrates superior academic excellence.",
+    "Exceptional ranking! A true academic leader in the class.",
+    "Outstanding achievement! Maintains highest academic standards.",
+    "Excellent class standing! Shows remarkable intellectual capabilities.",
+    "Top position! Demonstrates exceptional mastery of all subjects.",
+    "Brilliant ranking! An exemplary student with outstanding abilities."
+  ],
+  upper: [
+    "Good class position. Shows strong academic performance.",
+    "Commendable class ranking. Above average performance.",
+    "Strong class position! Demonstrates solid academic abilities.",
+    "Good ranking! Shows consistent effort and understanding.",
+    "Commendable standing! Above average academic achievement.",
+    "Strong performance! Well-positioned among high achievers.",
+    "Good class ranking! Displays solid academic capabilities.",
+    "Commendable position! Shows promise for continued excellence."
+  ],
+  middle: [
+    "Average class position. Room for improvement in ranking.",
+    "Fair class position. Could work towards higher ranking.",
+    "Moderate class standing. Needs more effort to improve position.",
+    "Average ranking! Potential for better academic performance.",
+    "Fair position! Could benefit from increased dedication.",
+    "Middle ranking! Room for improvement with consistent effort.",
+    "Average standing! Needs focus to achieve higher position.",
+    "Moderate position! Can improve with better study habits."
+  ],
+  lower: [
+    "Below average class position. Needs significant improvement.",
+    "Poor class ranking. Must work harder to improve position.",
+    "Low class position. Requires immediate attention to studies.",
+    "Weak ranking! Needs substantial improvement in performance.",
+    "Poor standing! Must demonstrate greater academic commitment.",
+    "Low position! Requires urgent intervention and support.",
+    "Weak ranking! Needs comprehensive academic improvement.",
+    "Poor position! Must show dramatic improvement in studies."
+  ]
+};
+
+const constructiveFeedback = {
+  excellent: [
+    "Continue maintaining excellent standards. Consider advanced studies.",
+    "Outstanding work! Explore leadership roles and academic competitions.",
+    "Exceptional performance! Consider mentoring other students.",
+    "Brilliant achievement! Pursue advanced academic challenges.",
+    "Excellent results! Consider participating in academic enrichment programs."
+  ],
+  veryGood: [
+    "Strong performance! With extra effort, could reach excellence.",
+    "Very good work! Focus on weak areas to achieve outstanding results.",
+    "Commendable achievement! Additional practice could lead to excellence.",
+    "Strong results! Target specific areas for improvement.",
+    "Very good performance! Consistent effort will lead to top ranking."
+  ],
+  good: [
+    "Good effort! Increase study time for better results.",
+    "Satisfactory work! Focus on understanding concepts deeply.",
+    "Good performance! Develop better study habits and consistency.",
+    "Decent achievement! Seek help in challenging subjects.",
+    "Fair work! More dedication will lead to significant improvement."
+  ],
+  average: [
+    "Needs improvement! Develop consistent study routine.",
+    "Fair performance! Seek additional help from teachers.",
+    "Average work! Focus on fundamentals and practice regularly.",
+    "Satisfactory results! Increase study time and concentration.",
+    "Moderate achievement! Join study groups and seek tutoring."
+  ],
+  belowAverage: [
+    "Requires immediate attention! Seek help from teachers and tutors.",
+    "Poor performance! Develop basic study skills and habits.",
+    "Below average work! Attend extra classes and seek counseling.",
+    "Weak achievement! Requires comprehensive academic support.",
+    "Unsatisfactory results! Must change study approach completely."
+  ],
+  poor: [
+    "Critical situation! Requires intensive academic intervention.",
+    "Very poor work! Must seek comprehensive support immediately.",
+    "Failing performance! Requires one-on-one tutoring and counseling.",
+    "Extremely weak results! Must consider academic probation.",
+    "Critical achievement! Requires complete academic rehabilitation."
+  ]
+};
+
+function generateAutoComment(averageScore: number, position: number, totalStudents: number): string {
+  let comments: string[] = [];
+  
+  // Academic performance comment based on average score
+  let academicComment = "";
+  let performanceLevel = "";
+  
+  if (averageScore >= 80) {
+    academicComment = commentTemplates.excellent[Math.floor(Math.random() * commentTemplates.excellent.length)];
+    performanceLevel = "excellent";
+  } else if (averageScore >= 70) {
+    academicComment = commentTemplates.veryGood[Math.floor(Math.random() * commentTemplates.veryGood.length)];
+    performanceLevel = "veryGood";
+  } else if (averageScore >= 60) {
+    academicComment = commentTemplates.good[Math.floor(Math.random() * commentTemplates.good.length)];
+    performanceLevel = "good";
+  } else if (averageScore >= 50) {
+    academicComment = commentTemplates.average[Math.floor(Math.random() * commentTemplates.average.length)];
+    performanceLevel = "average";
+  } else if (averageScore >= 40) {
+    academicComment = commentTemplates.belowAverage[Math.floor(Math.random() * commentTemplates.belowAverage.length)];
+    performanceLevel = "belowAverage";
+  } else {
+    academicComment = commentTemplates.poor[Math.floor(Math.random() * commentTemplates.poor.length)];
+    performanceLevel = "poor";
+  }
+  
+  comments.push(academicComment);
+  
+  // Position comment
+  const positionPercentage = (position / totalStudents) * 100;
+  let positionComment = "";
+  let positionLevel = "";
+  
+  if (positionPercentage <= 10) {
+    positionComment = positionComments.top[Math.floor(Math.random() * positionComments.top.length)];
+    positionLevel = "top";
+  } else if (positionPercentage <= 30) {
+    positionComment = positionComments.upper[Math.floor(Math.random() * positionComments.upper.length)];
+    positionLevel = "upper";
+  } else if (positionPercentage <= 70) {
+    positionComment = positionComments.middle[Math.floor(Math.random() * positionComments.middle.length)];
+    positionLevel = "middle";
+  } else {
+    positionComment = positionComments.lower[Math.floor(Math.random() * positionComments.lower.length)];
+    positionLevel = "lower";
+  }
+  
+  if (positionComment) {
+    comments.push(positionComment);
+  }
+  
+  // Constructive feedback based on performance level
+  const feedbackOptions = constructiveFeedback[performanceLevel as keyof typeof constructiveFeedback];
+  if (feedbackOptions && feedbackOptions.length > 0) {
+    const feedback = feedbackOptions[Math.floor(Math.random() * feedbackOptions.length)];
+    comments.push(feedback);
+  }
+  
+  return comments.join(" ");
+}
+
+function generateMultipleCommentOptions(averageScore: number, position: number, totalStudents: number): string[] {
+  const options: string[] = [];
+  
+  // Generate 5 different comment options
+  for (let i = 0; i < 5; i++) {
+    options.push(generateAutoComment(averageScore, position, totalStudents));
+  }
+  
+  // Ensure all options are unique
+  const uniqueOptions = [...new Set(options)];
+  
+  // If we don't have enough unique options, add some variations
+  while (uniqueOptions.length < 3) {
+    uniqueOptions.push(generateAutoComment(averageScore, position, totalStudents));
+  }
+  
+  return uniqueOptions.slice(0, 5);
+}
+
+function generatePrincipalComment(averageScore: number): string {
+  if (averageScore >= 80) {
+    return "Exceptional performance! Keep up the excellent work. You are a role model for others.";
+  } else if (averageScore >= 70) {
+    return "Very good performance! Continue to work hard and aim for excellence.";
+  } else if (averageScore >= 60) {
+    return "Good performance! There is room for improvement. Stay focused and dedicated.";
+  } else if (averageScore >= 50) {
+    return "Fair performance. More effort and dedication needed for better results.";
+  } else {
+    return "Poor performance. Requires immediate attention and significant improvement.";
+  }
+}
+
+function calculateGrade(averageScore: number): string {
+  if (averageScore >= 80) return 'A';
+  if (averageScore >= 70) return 'B';
+  if (averageScore >= 60) return 'C';
+  if (averageScore >= 50) return 'D';
+  if (averageScore >= 40) return 'E';
+  return 'F';
+}
+
+function calculatePositions(studentsData: { studentId: number; averageScore: number }[]): Map<number, { position: number; totalStudents: number }> {
+  const sortedStudents = studentsData.sort((a, b) => b.averageScore - a.averageScore);
+  const positions = new Map<number, { position: number; totalStudents: number }>();
+  
+  sortedStudents.forEach((student, index) => {
+    positions.set(student.studentId, {
+      position: index + 1,
+      totalStudents: sortedStudents.length
+    });
+  });
+  
+  return positions;
+}
+
+export function CompileResultsPage() {
+  const {
+    currentUser,
+    teachers,
+    students,
+    classes,
+    scores,
+    affectiveDomains,
+    psychomotorDomains,
+    compiledResults,
+    addCompiledResult,
+    updateCompiledResult,
+    currentTerm,
+    currentAcademicYear,
+    subjectAssignments,
+    subjectRegistrations,
+    loadScoresFromAPI,
+    loadAffectiveDomainsFromAPI,
+    loadPsychomotorDomainsFromAPI,
+    refreshClassData,
+    canViewResults,
+    canManageScores,
+    updateAffectiveDomain,
+    updatePsychomotorDomain,
+    createAffectiveDomain,
+    createPsychomotorDomain
+  } = useSchool();
+
+  const [selectedClassId, setSelectedClassId] = useState<string>("");
+  const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
+  const [classTeacherComment, setClassTeacherComment] = useState<string>("");
+  const [useAutoComment, setUseAutoComment] = useState<boolean>(false);
+  const [showCommentOptions, setShowCommentOptions] = useState<boolean>(false);
+  const [commentOptions, setCommentOptions] = useState<string[]>([]);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [resultsGenerated, setResultsGenerated] = useState<boolean>(false);
+  
+  // Affective and Psychomotor form states
+  const [affectiveData, setAffectiveData] = useState({
+    attentiveness: 3,
+    honesty: 3,
+    punctuality: 3,
+    neatness: 3,
+    attentiveness_remark: '',
+    honesty_remark: '',
+    punctuality_remark: '',
+    neatness_remark: ''
+  });
+  
+  const [psychomotorData, setPsychomotorData] = useState({
+    sports: 3,
+    handwork: 3,
+    drawing: 3,
+    music: 3,
+    sports_remark: '',
+    handwork_remark: '',
+    drawing_remark: '',
+    music_remark: ''
+  });
+
+  // Handle affective domain save
+  const handleSaveAffective = async () => {
+    if (!selectedStudent) {
+      toast.error('No student selected');
+      return;
+    }
+
+    try {
+      const affectivePayload = {
+        student_id: selectedStudent.id,
+        class_id: Number(selectedClassId),
+        term: currentTerm,
+        academic_year: currentAcademicYear,
+        ...affectiveData,
+        entered_by: currentUser?.id
+      };
+      
+      const existingId = studentResultData?.affective?.id;
+      if (existingId) {
+        await updateAffectiveDomain(existingId, affectivePayload);
+      } else {
+        // Create new affective domain record
+        await createAffectiveDomain(affectivePayload);
+      }
+      
+      toast.success('Affective domain assessment saved');
+    } catch (error) {
+      toast.error('Failed to save affective domain assessment');
+    }
+  };
+
+  // Handle psychomotor domain save
+  const handleSavePsychomotor = async () => {
+    if (!selectedStudent) {
+      toast.error('No student selected');
+      return;
+    }
+
+    try {
+      const psychomotorPayload = {
+        student_id: selectedStudent.id,
+        class_id: Number(selectedClassId),
+        term: currentTerm,
+        academic_year: currentAcademicYear,
+        ...psychomotorData,
+        entered_by: currentUser?.id
+      };
+      
+      const existingId = studentResultData?.psychomotor?.id;
+      if (existingId) {
+        await updatePsychomotorDomain(existingId, psychomotorPayload);
+      } else {
+        // Create new psychomotor domain record
+        await createPsychomotorDomain(psychomotorPayload);
+      }
+      
+      toast.success('Psychomotor domain assessment saved');
+    } catch (error) {
+      toast.error('Failed to save psychomotor domain assessment');
+    }
+  };
+
+  // Refresh data function with optimized class-specific refresh
+  const refreshData = useCallback(async () => {
+    try {
+      // Always load scores to get the latest submitted scores
+      await loadScoresFromAPI();
+      
+      if (selectedClassId) {
+        await refreshClassData(Number(selectedClassId));
+      }
+      
+      setLastRefresh(new Date());
+      toast.success('Data refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast.error('Failed to refresh data');
+    }
+  }, [selectedClassId, refreshClassData, loadScoresFromAPI]);
+
+  // Generate Results function
+  const handleGenerateResults = async () => {
+    try {
+      // First refresh scores to get latest data
+      await loadScoresFromAPI();
+      
+      // Force recalculation of positions and averages
+      setResultsGenerated(true);
+      toast.success("Results generated successfully! Positions and averages calculated.");
+    } catch (error) {
+      console.error('Error generating results:', error);
+      toast.error('Failed to generate results. Please try again.');
+    }
+  };
+
+  // Manual refresh button for users
+  const handleManualRefresh = () => {
+    refreshData();
+  };
+
+  // Auto-refresh when component mounts (only once per class change)
+  useEffect(() => {
+    if (selectedClassId) {
+      refreshData();
+    }
+  }, [selectedClassId]); // Only run when class changes
+
+  // Periodic score refresh to ensure latest data
+  useEffect(() => {
+    if (!selectedClassId) return;
+
+    const interval = setInterval(async () => {
+      try {
+        await loadScoresFromAPI();
+        console.log('Scores refreshed automatically');
+      } catch (error) {
+        console.error('Auto refresh scores failed:', error);
+      }
+    }, 30000); // Refresh every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [selectedClassId, loadScoresFromAPI]);
+
+  // Check permissions
+  useEffect(() => {
+    const checkPermissions = async () => {
+      if (currentUser?.role === 'teacher') {
+        const hasResultsPermission = await canViewResults();
+        const hasScoresPermission = await canManageScores();
+        
+        if (!hasResultsPermission) {
+          toast.error('You do not have permission to view results');
+          return;
+        }
+        
+        if (!hasScoresPermission) {
+          toast.error('You do not have permission to manage scores');
+          return;
+        }
+      }
+    };
+    
+    checkPermissions();
+  }, [currentUser, canViewResults, canManageScores]);
+
+  // Get current teacher
+  const currentTeacher = currentUser ? teachers.find(t => t.id === currentUser.linked_id) : null;
+  // Check if teacher has class teacher assignments
+  const hasClassTeacherAssignments = useMemo(() => {
+    if (!currentTeacher) return false;
+    return classes.some((c: any) => c.classTeacherId === currentTeacher.id && c.status === 'Active');
+  }, [currentTeacher, classes]);
+
+  // Only show classes where teacher is the class teacher
+  const classTeacherClasses = useMemo(() => {
+    if (!currentTeacher) {
+      return [];
+    }
+    
+    return classes.filter((c: any) => c.classTeacherId === currentTeacher.id && c.status === 'Active');
+  }, [currentTeacher, classes]);
+
+  // Get students in selected class
+  const classStudents = useMemo(() => {
+    if (!selectedClassId) return [];
+    return students
+      .filter(s => s.class_id === Number(selectedClassId) && s.status === 'Active')
+      .sort((a, b) => a.lastName.localeCompare(b.lastName));
+  }, [selectedClassId, students]);
+
+  // Get all registered subjects for the class (these are the subjects that should appear in results)
+  const classSubjects = useMemo(() => {
+    if (!selectedClassId) return [];
+    
+    // Get subject assignments directly for this class, term, and academic year
+    const subjectAssignmentsForClass = subjectAssignments.filter(
+      sa => sa.class_id === Number(selectedClassId) &&
+            sa.term === currentTerm &&
+            sa.academic_year === currentAcademicYear &&
+            sa.status === 'Active'
+    );
+    
+    return subjectAssignmentsForClass;
+  }, [selectedClassId, subjectAssignments, currentTerm, currentAcademicYear]);
+
+  // Get selected student details
+  const selectedStudent = useMemo(() => {
+    if (!selectedStudentId) return null;
+    return classStudents.find(s => s.id === selectedStudentId);
+  }, [selectedStudentId, classStudents]);
+
+  // Reset affective and psychomotor data when student changes
+  useEffect(() => {
+    if (selectedStudent && selectedClassId) {
+      // Load existing affective data
+      const existingAffective = affectiveDomains.find(
+        ad => ad.student_id === selectedStudent.id && 
+             ad.class_id === Number(selectedClassId) &&
+             ad.term === currentTerm &&
+             ad.academic_year === currentAcademicYear
+      );
+      
+      if (existingAffective) {
+        setAffectiveData({
+          attentiveness: existingAffective.attentiveness || 3,
+          honesty: existingAffective.honesty || 3,
+          punctuality: existingAffective.punctuality || 3,
+          neatness: existingAffective.neatness || 3,
+          attentiveness_remark: existingAffective.attentiveness_remark || '',
+          honesty_remark: existingAffective.honesty_remark || '',
+          punctuality_remark: existingAffective.punctuality_remark || '',
+          neatness_remark: existingAffective.neatness_remark || ''
+        });
+      } else {
+        // Reset to defaults
+        setAffectiveData({
+          attentiveness: 3,
+          honesty: 3,
+          punctuality: 3,
+          neatness: 3,
+          attentiveness_remark: '',
+          honesty_remark: '',
+          punctuality_remark: '',
+          neatness_remark: ''
+        });
+      }
+      
+      // Load existing psychomotor data
+      const existingPsychomotor = psychomotorDomains.find(
+        pd => pd.student_id === selectedStudent.id && 
+             pd.class_id === Number(selectedClassId) &&
+             pd.term === currentTerm &&
+             pd.academic_year === currentAcademicYear
+      );
+      
+      if (existingPsychomotor) {
+        setPsychomotorData({
+          sports: existingPsychomotor.sports || 3,
+          handwork: existingPsychomotor.handwork || 3,
+          drawing: existingPsychomotor.drawing || 3,
+          music: existingPsychomotor.music || 3,
+          sports_remark: existingPsychomotor.sports_remark || '',
+          handwork_remark: existingPsychomotor.handwork_remark || '',
+          drawing_remark: existingPsychomotor.drawing_remark || '',
+          music_remark: existingPsychomotor.music_remark || ''
+        });
+      } else {
+        // Reset to defaults
+        setPsychomotorData({
+          sports: 3,
+          handwork: 3,
+          drawing: 3,
+          music: 3,
+          sports_remark: '',
+          handwork_remark: '',
+          drawing_remark: '',
+          music_remark: ''
+        });
+      }
+    }
+  }, [selectedStudent?.id, selectedClassId, affectiveDomains, psychomotorDomains, currentTerm, currentAcademicYear]);
+
+  // Calculate all students' completion status and positions
+  const studentsCompletion = useMemo(() => {
+    if (!classStudents.length) {
+      return [];
+    }
+
+    
+    const studentsData = classStudents.map(student => {
+      // Get all scores for this student
+      const studentScores = scores.filter(s => s.student_id === student.id);
+      
+      // IMPORTANT: Only use scores that match this class's subject assignments
+      // This prevents mixing scores from other classes
+      const relevantScores = studentScores.filter(s => 
+        s.status === 'Submitted' && 
+        classSubjects.some((cs: any) => cs && Number(cs.id) === Number(s.subject_assignment_id))
+      );
+      
+      // Debug: Show matching info for first student only to avoid spam
+      if (student.id === classStudents[0]?.id) {
+        console.log(`=== DEBUG for ${student.firstName} ${student.lastName} ===`);
+        console.log('Class Subjects:', classSubjects.map(cs => ({ id: cs.id, subject_name: cs.subject_name })));
+        console.log('Student Scores:', studentScores.map(s => ({ 
+          id: s.id, 
+          subject_assignment_id: s.subject_assignment_id, 
+          total: s.total, 
+          status: s.status 
+        })));
+        console.log('Relevant Scores (matching class):', relevantScores.map(s => ({ 
+          id: s.id, 
+          subject_assignment_id: s.subject_assignment_id, 
+          total: s.total 
+        })));
+      }
+
+      const affective = affectiveDomains.find(a => 
+        a.student_id === student.id &&
+        a.class_id === Number(selectedClassId) &&
+        a.term === currentTerm
+      );
+
+      const psychomotor = psychomotorDomains.find(p => 
+        p.student_id === student.id &&
+        p.class_id === Number(selectedClassId) &&
+        p.term === currentTerm
+      );
+
+      const existingResult = compiledResults.find(r =>
+        r.student_id === student.id &&
+        r.class_id === Number(selectedClassId) &&
+        r.term === currentTerm
+      );
+
+      // Count completed subjects from relevant scores
+      const completedSubjects = relevantScores.length;
+      const totalSubjects = classSubjects.length > 0 ? classSubjects.length : relevantScores.length;
+      const hasAffective = affective !== undefined;
+      const hasPsychomotor = psychomotor !== undefined;
+      const isSubmitted = existingResult?.status === 'Submitted' || existingResult?.status === 'Approved';
+
+      // Calculate total score from relevant scores
+      const totalScore = relevantScores.reduce((sum, s) => {
+        const scoreTotal = Number(s.total) || 0;
+        return sum + scoreTotal;
+      }, 0);
+      
+      // Debug: Show calculation for first student
+      if (student.id === classStudents[0]?.id) {
+        console.log(`SCORE DEBUG for ${student.firstName}:`, {
+          relevantScoresCount: relevantScores.length,
+          relevantScores: relevantScores.map(s => ({ id: s.id, total: s.total, type: typeof s.total })),
+          calculatedTotal: totalScore
+        });
+      }
+      
+      // Calculate average score from relevant scores
+      const averageScore = relevantScores.length > 0 
+        ? Math.round((totalScore / relevantScores.length) * 100) / 100 
+        : 0;
+
+      
+      return {
+        studentId: student.id,
+        studentName: `${student.firstName} ${student.lastName}`,
+        completedSubjects,
+        totalSubjects,
+        hasAffective,
+        hasPsychomotor,
+        isSubmitted,
+        averageScore,
+        totalScore,
+        isComplete: completedSubjects === totalSubjects && hasAffective && hasPsychomotor,
+        studentScores: relevantScores
+      };
+    });
+
+    // Calculate positions based on total scores (highest to lowest)
+    // Include ALL students, even those with 0 scores
+    const studentsWithScores = studentsData
+      .sort((a, b) => Number(b.totalScore) - Number(a.totalScore)); // Sort by highest total first
+
+    // Assign positions
+    let currentPosition = 1;
+    const positionedStudents = studentsWithScores.map((student, index) => {
+      if (index > 0 && Number(student.totalScore) < Number(studentsWithScores[index - 1].totalScore)) {
+        currentPosition = index + 1;
+      }
+      const positionedStudent = {
+        ...student,
+        position: currentPosition,
+        totalStudents: studentsWithScores.length
+      };
+      return positionedStudent;
+    });
+
+    const finalResult = positionedStudents;
+    
+    return finalResult;
+  }, [classStudents, scores, classSubjects, affectiveDomains, psychomotorDomains, compiledResults, selectedClassId, currentTerm, resultsGenerated]);
+
+  // Get student's result data
+  const studentResultData = useMemo(() => {
+    if (!selectedStudent) return null;
+    
+    // Get all scores for this student (less restrictive filtering)
+    const studentScores = scores.filter(s => s.student_id === selectedStudent.id);
+    
+    // Filter for relevant scores that match current class subjects
+    const relevantScores = studentScores.filter(s => 
+      s.status === 'Submitted' &&
+      classSubjects.some((cs: any) => cs && Number(cs.id) === Number(s.subject_assignment_id))
+    );
+
+    const affective = affectiveDomains.find(a => 
+      a.student_id === selectedStudent.id &&
+      a.class_id === Number(selectedClassId) &&
+      a.academic_year === currentAcademicYear
+    );
+
+    const psychomotor = psychomotorDomains.find(p => 
+      p.student_id === selectedStudent.id &&
+      p.class_id === Number(selectedClassId) &&
+      p.academic_year === currentAcademicYear
+    );
+
+    const existingResult = compiledResults.find(
+      cr => cr.student_id === selectedStudent.id &&
+           cr.class_id === Number(selectedClassId) &&
+           cr.term === currentTerm &&
+           cr.academic_year === currentAcademicYear
+    );
+
+    // Calculate totals using same logic as studentsCompletion
+    const totalScoreRaw = relevantScores.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+    const totalScore = totalScoreRaw > 0 ? parseFloat(totalScoreRaw.toPrecision(3)) : 0;
+    const averageScore = relevantScores.length > 0 
+      ? Math.round((totalScore / relevantScores.length) * 100) / 100 
+      : 0;
+
+    // Get student's position from studentsCompletion (now calculated by total score)
+    const studentCompletionData = studentsCompletion.find(s => s.studentId === selectedStudent.id);
+    const position = studentCompletionData?.position || 0;
+    const totalStudents = studentCompletionData?.totalStudents || 0;
+
+    // Check completion
+    const isComplete = 
+      relevantScores.length === (classSubjects || []).length &&
+      relevantScores.every(s => s.status === 'Submitted') &&
+      affective !== undefined &&
+      psychomotor !== undefined;
+
+    return {
+      student: selectedStudent,
+      scores: relevantScores, // Use relevant scores
+      affective: affective,
+      psychomotor: psychomotor,
+      totalScore,
+      averageScore,
+      position,
+      totalStudents,
+      subjectsCompleted: relevantScores.filter(s => s.status === 'Submitted').length,
+      totalSubjects: (classSubjects || []).length,
+      isComplete,
+      existingResult
+    };
+  }, [selectedStudent, scores, classSubjects, affectiveDomains, psychomotorDomains, compiledResults, selectedClassId, currentTerm, currentAcademicYear, studentsCompletion]);
+
+  // Calculate class statistics
+  const classStatistics = useMemo(() => {
+    const validStudents = studentsCompletion.filter(s => s.averageScore > 0);
+    const scores = validStudents.map(s => s.averageScore);
+    
+    if (scores.length === 0) {
+      return {
+        classAverage: 0,
+        highestScore: 0,
+        lowestScore: 0,
+        totalStudents: 0
+      };
+    }
+
+    return {
+      classAverage: Math.round((scores.reduce((sum, score) => sum + score, 0) / scores.length) * 100) / 100,
+      highestScore: Math.max(...scores),
+      lowestScore: Math.min(...scores),
+      totalStudents: validStudents.length
+    };
+  }, [studentsCompletion]);
+
+  // Submit result for selected student
+  const handleSubmitResult = () => {
+    if (!selectedStudent || !studentResultData || !currentTeacher) {
+      toast.error('Missing required data');
+      return;
+    }
+
+    const selectedClass = classes.find(c => c.id === Number(selectedClassId));
+    if (!selectedClass || selectedClass.classTeacherId !== currentTeacher.id) {
+      toast.error('You can only compile results for your assigned class');
+      return;
+    }
+
+    if (!studentResultData.isComplete) {
+      toast.error("Cannot submit incomplete result. Ensure all scores and assessments are entered.");
+      return;
+    }
+
+    // Get student's position from calculated data
+    const studentCompletionData = studentsCompletion.find(s => s.studentId === selectedStudent.id);
+    const position = studentCompletionData?.position || 0;
+    const totalStudents = studentCompletionData?.totalStudents || 0;
+
+    // Generate auto-comment if enabled, or use manual comment
+    let finalComment = classTeacherComment;
+    if (useAutoComment && !finalComment.trim()) {
+      // If auto-comment is enabled but no comment selected, generate one
+      finalComment = generateAutoComment(studentResultData.averageScore, position, totalStudents);
+    }
+
+    if (!finalComment.trim()) {
+      toast.error("Please enter a class teacher comment or enable auto-comment");
+      return;
+    }
+
+    const resultData = {
+      student_id: selectedStudent.id,
+      class_id: Number(selectedClassId),
+      term: currentTerm,
+      academic_year: currentAcademicYear,
+      scores: studentResultData.scores,
+      affective: studentResultData.affective || null,
+      psychomotor: studentResultData.psychomotor || null,
+      total_score: studentResultData.totalScore,
+      average_score: studentResultData.averageScore,
+      class_average: classStatistics.classAverage,
+      position: position,
+      total_students: totalStudents,
+      times_present: 0,
+      times_absent: 0,
+      total_attendance_days: 0,
+      term_begin: '',
+      term_end: '',
+      next_term_begin: '',
+      class_teacher_name: `${currentTeacher.firstName} ${currentTeacher.lastName}`,
+      class_teacher_comment: finalComment,
+      principal_name: '',
+      principal_comment: generatePrincipalComment(studentResultData.averageScore),
+      principal_signature: '',
+      compiled_by: 1, // Use admin user ID (1) to satisfy foreign key constraint
+      compiled_date: new Date().toISOString(),
+      status: 'Submitted' as const,
+      approved_by: null,
+      approved_date: null,
+      rejection_reason: null
+    };
+
+    if (studentResultData.existingResult) {
+      updateCompiledResult(studentResultData.existingResult.id, resultData);
+      toast.success(`Result updated for ${selectedStudent.firstName} ${selectedStudent.lastName}`);
+    } else {
+      addCompiledResult(resultData);
+      toast.success(`Result submitted for ${selectedStudent.firstName} ${selectedStudent.lastName}`);
+    }
+
+    // Clear and go back to list
+    setClassTeacherComment("");
+    setSelectedStudentId(null);
+    setUseAutoComment(false);
+  };
+
+  // Submit all complete results
+  const handleSubmitAllResults = () => {
+    if (!selectedClassId || !currentTeacher) {
+      toast.error("Please select a class");
+      return;
+    }
+
+    // Check if current teacher is the class teacher for this class
+    const selectedClass = classes.find(c => c.id === Number(selectedClassId));
+    if (!selectedClass || selectedClass.classTeacherId !== currentTeacher.id) {
+      toast.error("Only the class teacher can compile results for this class");
+      return;
+    }
+
+    const completeStudents = studentsCompletion.filter(s => s.isComplete && !s.isSubmitted);
+    
+    if (completeStudents.length === 0) {
+      toast.error("No complete results to submit");
+      return;
+    }
+
+    let submittedCount = 0;
+
+    completeStudents.forEach((studentComp) => {
+      const student = classStudents.find(s => s.id === studentComp.studentId);
+      if (!student) return;
+
+      const studentScores = scores.filter(s => 
+        s.student_id === student.id &&
+        classSubjects.some((cs: any) => cs && cs.id === s.subject_assignment_id)
+      );
+
+      const affective = affectiveDomains.find(a => 
+        a.student_id === student.id &&
+        a.class_id === Number(selectedClassId) &&
+        a.term === currentTerm
+      );
+
+      const psychomotor = psychomotorDomains.find(p => 
+        p.student_id === student.id &&
+        p.class_id === Number(selectedClassId) &&
+        p.term === currentTerm
+      );
+
+      const totalScore = studentScores.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
+      const averageScore = Math.round((totalScore / (studentScores || []).length) * 100) / 100;
+
+      // Calculate class average
+      const allAverages = studentsCompletion
+        .filter(s => s.averageScore > 0)
+        .map(s => s.averageScore);
+      const classAverage = Math.round(((allAverages || []).reduce((sum, a) => sum + a, 0) / (allAverages || []).length) * 100) / 100;
+
+      // Calculate position
+      const sortedStudents = [...allAverages].sort((a, b) => b - a);
+      const position = sortedStudents.indexOf(averageScore) + 1;
+
+      let autoComment = '';
+      if (averageScore >= 70) {
+        autoComment = 'Excellent performance! Keep up the outstanding work.';
+      } else if (averageScore >= 60) {
+        autoComment = 'Very good performance. Continue to work hard.';
+      } else if (averageScore >= 50) {
+        autoComment = 'Good effort. There is room for improvement.';
+      } else if (averageScore >= 40) {
+        autoComment = 'Fair performance. More effort is needed.';
+      } else {
+        autoComment = 'Needs serious improvement. Please put in more effort.';
+      }
+
+      const compiledData = {
+        student_id: student.id,
+        class_id: Number(selectedClassId),
+        term: currentTerm,
+        academic_year: currentAcademicYear,
+        scores: studentScores,
+        affective: affective || null,
+        psychomotor: psychomotor || null,
+        total_score: totalScore,
+        average_score: averageScore,
+        class_average: classAverage,
+        position: position,
+        total_students: classStudents.length,
+        times_present: 0,
+        times_absent: 0,
+        total_attendance_days: 0,
+        term_begin: '',
+        term_end: '',
+        next_term_begin: '',
+        class_teacher_name: `${currentTeacher.firstName} ${currentTeacher.lastName}`,
+        class_teacher_comment: autoComment,
+        principal_name: 'Dr. Ibrahim Musa',
+        principal_comment: '',
+        principal_signature: '',
+        compiled_by: 1, // Use admin user ID (1) to satisfy foreign key constraint
+        compiled_date: new Date().toISOString(),
+        status: 'Submitted' as const,
+        approved_by: null,
+        approved_date: null,
+        rejection_reason: null
+      };
+
+      addCompiledResult(compiledData);
+      submittedCount++;
+    });
+
+    // Notify admin
+    toast.success(`Successfully submitted ${submittedCount} results for approval`);
+
+    toast.success(`${submittedCount} results submitted to admin for approval!`);
+  };
+
+  // Restrict access to teachers with class assignments
+  if (!hasClassTeacherAssignments) {
+    return (
+      <div className="p-6">
+        <div className="text-center py-12">
+          <AlertCircle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-700 mb-2">Access Restricted</h2>
+          <p className="text-gray-500 max-w-md mx-auto">
+            Only class teachers can compile results. You must be assigned as a class teacher to access this page.
+          </p>
+          <p className="text-sm text-gray-400 mt-2">
+            Contact the administrator if you believe this is an error.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-[#0A2540] mb-2">Compile Results</h1>
+          <p className="text-gray-600">
+            {selectedStudentId 
+              ? "Review and compile student result" 
+              : "Select a class to view students and compile their results"}
+          </p>
+          {lastRefresh && (
+            <p className="text-xs text-gray-500 mt-1">
+              Last refreshed: {lastRefresh.toLocaleTimeString()}
+            </p>
+          )}
+        </div>
+        <Button
+          onClick={handleManualRefresh}
+          variant="outline"
+          className="flex items-center gap-2 border-[#0A2540]/20"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Refresh
+        </Button>
+        <Button
+          onClick={handleGenerateResults}
+          className="bg-[#F59E0B] hover:bg-[#D97706] text-white rounded-xl flex items-center gap-2"
+        >
+          <Award className="h-4 w-4" />
+          Generate Results
+        </Button>
+      </div>
+
+      {/* Class Selection */}
+      {!selectedStudentId && (
+        <Card className="border-[#0A2540]/10">
+          <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl">
+            <CardTitle>Select Class</CardTitle>
+          </CardHeader>
+          <CardContent className="p-6">
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label className="text-[#0A2540] mb-2 block">Class</Label>
+                <Select value={selectedClassId} onValueChange={setSelectedClassId}>
+                  <SelectTrigger className="h-12 rounded-xl border-[#0A2540]/20">
+                    <SelectValue placeholder="Select class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {classTeacherClasses.map((cls) => (
+                      <SelectItem key={cls.id} value={cls.id.toString()}>
+                        {cls.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-[#0A2540] mb-2 block">Term & Year</Label>
+                <div className="h-12 flex items-center px-4 rounded-xl border border-[#0A2540]/20 bg-gray-50">
+                  <p className="text-[#0A2540]">{currentTerm} {currentAcademicYear}</p>
+                </div>
+              </div>
+            </div>
+
+            {selectedClassId && classSubjects.length > 0 && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
+                <p className="text-sm text-blue-900">
+                  <strong>{classSubjects.length} subjects</strong> assigned to this class for {currentTerm} {currentAcademicYear}
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Student List */}
+      {!selectedStudentId && selectedClassId && (
+        <Card className="border-[#0A2540]/10">
+          <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-bold">Students List</h2>
+                <p className="text-blue-100">
+                  {classStudents.length} students in class
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleSubmitAllResults}
+                  disabled={(studentsCompletion || []).filter(s => s.isComplete && !s.isSubmitted).length === 0}
+                  className="bg-white text-[#10B981] hover:bg-gray-100 rounded-xl"
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  Submit All
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4">
+            {classStudents.length === 0 ? (
+              <div className="text-center py-12">
+                <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No students in this class</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {classStudents.map((student) => {
+                  const completion = studentsCompletion.find(s => s.studentId === student.id);
+                  // Don't hide students without completion data - show them with default values
+
+                  return (
+                    <div
+                      key={student.id}
+                      className="p-3 border border-[#0A2540]/10 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer"
+                      onClick={() => setSelectedStudentId(student.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="w-10 h-10 border-2 border-[#3B82F6]">
+                            {student.photo_url ? (
+                              <img 
+                                src={student.photo_url} 
+                                alt={`${student.firstName} ${student.lastName}`}
+                                className="w-full h-full object-cover rounded-full"
+                                onError={(e) => {
+                                  // Fallback to initials if image fails to load
+                                  e.currentTarget.style.display = 'none';
+                                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                }}
+                              />
+                            ) : null}
+                            <AvatarFallback className="bg-[#3B82F6] text-white text-sm">
+                              {student.firstName[0]}{student.lastName[0]}
+                            </AvatarFallback>
+                          </Avatar>
+                          
+                          <div>
+                            <p className="text-[#0A2540] font-medium text-sm">
+                              {student.firstName} {student.lastName}
+                            </p>
+                            <p className="text-xs text-gray-600">{student.admissionNumber}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          {/* Scores Progress */}
+                          <div className="text-right">
+                            <p className="text-xs text-gray-600">Scores</p>
+                            <div className="flex items-center gap-1">
+                              <Badge 
+                                variant={completion?.completedSubjects === completion?.totalSubjects ? "default" : "outline"}
+                                className={`rounded-lg text-xs ${
+                                  completion?.completedSubjects === completion?.totalSubjects 
+                                    ? 'bg-green-100 text-green-800 border-green-300' 
+                                    : 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                                }`}
+                              >
+                                {completion?.completedSubjects || 0}/{completion?.totalSubjects || 0}
+                              </Badge>
+                            </div>
+                          </div>
+
+                          {/* Affective */}
+                          <div className="text-center">
+                            <p className="text-xs text-gray-600 mb-1">Affective</p>
+                            {completion?.hasAffective ? (
+                              <CheckCircle className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-yellow-600" />
+                            )}
+                          </div>
+
+                          {/* Psychomotor */}
+                          <div className="text-center">
+                            <p className="text-xs text-gray-600 mb-1">Psy.</p>
+                            {completion?.hasPsychomotor ? (
+                              <CheckCircle className="w-4 h-4 text-green-600" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-yellow-600" />
+                            )}
+                          </div>
+
+                          {/* Status */}
+                          <div className="text-center">
+                            <p className="text-xs text-gray-600 mb-1">Status</p>
+                            {completion?.isSubmitted ? (
+                              <Badge className="bg-green-100 text-green-800 border-green-300 text-xs">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Submitted
+                              </Badge>
+                            ) : completion?.isComplete ? (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-300 text-xs">
+                                Ready
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-gray-100 text-gray-800 border-gray-300 text-xs">
+                                Pending
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Selected Student Detail View */}
+      {selectedStudentId && selectedStudent && studentResultData && (
+        <div className="space-y-6">
+          {/* Back Button */}
+          <Button
+            onClick={() => {
+              setSelectedStudentId(null);
+              setClassTeacherComment("");
+            }}
+            variant="outline"
+            className="rounded-xl border-[#0A2540]/20"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Student List
+          </Button>
+
+          {/* Student Info Card */}
+          <Card className="border-[#0A2540]/10">
+            <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl py-4">
+              <CardTitle className="flex items-center gap-3 text-lg">
+                <Avatar className="w-10 h-10 border-2 border-white">
+                  {selectedStudent.photo_url ? (
+                    <img 
+                      src={selectedStudent.photo_url} 
+                      alt={`${selectedStudent.firstName} ${selectedStudent.lastName}`}
+                      className="w-full h-full object-cover rounded-full"
+                      onError={(e) => {
+                        // Fallback to initials if image fails to load
+                        e.currentTarget.style.display = 'none';
+                        e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                      }}
+                    />
+                  ) : null}
+                  <AvatarFallback className="bg-white text-[#3B82F6] text-sm">
+                    {selectedStudent.firstName[0]}{selectedStudent.lastName[0]}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="text-lg">{selectedStudent.firstName} {selectedStudent.lastName}</p>
+                  <p className="text-sm font-normal opacity-90">{selectedStudent.admissionNumber}</p>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="grid md:grid-cols-4 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Class</p>
+                  <p className="text-[#0A2540] font-medium">{selectedStudent.className}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Gender</p>
+                  <p className="text-[#0A2540] font-medium">{selectedStudent.gender}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Term</p>
+                  <p className="text-[#0A2540] font-medium">{currentTerm}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 mb-1">Academic Year</p>
+                  <p className="text-[#0A2540] font-medium">{currentAcademicYear}</p>
+                </div>
+              </div>
+
+              {/* Summary Stats */}
+              <div className="grid md:grid-cols-4 gap-4 mt-6">
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
+                  <p className="text-xs text-blue-900 mb-1">Subjects Completed</p>
+                  <p className="text-lg text-blue-900 font-bold">
+                    {studentResultData.subjectsCompleted}/{studentResultData.totalSubjects}
+                  </p>
+                </div>
+                <div className="p-4 bg-purple-50 rounded-xl border border-purple-200">
+                  <p className="text-xs text-purple-900 mb-1">Total Score</p>
+                  <p className="text-lg text-purple-900 font-bold">{studentResultData.totalScore}</p>
+                </div>
+                <div className="p-4 bg-green-50 rounded-xl border border-green-200">
+                  <p className="text-xs text-green-900 mb-1">Average</p>
+                  <p className="text-lg text-green-900 font-bold">{studentResultData.averageScore}%</p>
+                </div>
+                <div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
+                  <p className="text-xs text-orange-900 mb-1">Position</p>
+                  <p className="text-lg text-orange-900 font-bold">
+                    {studentResultData.position > 0 ? `${studentResultData.position}/${studentResultData.totalStudents}` : 'N/A'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Subject Scores */}
+          <Card className="border-[#0A2540]/10">
+            <CardHeader className="bg-gradient-to-r from-[#10B981] to-[#059669] text-white rounded-t-xl">
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5" />
+                Subject Scores
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              {classSubjects.length === 0 ? (
+                <div className="text-center py-8">
+                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">No subjects assigned to this class</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {classSubjects.map((assignment: any) => {
+                    if (!assignment) return null;
+                    const score = studentResultData.scores.find(s => s.subject_assignment_id === assignment.id);
+                    
+                    return (
+                      <div
+                        key={assignment.id}
+                        className={`p-4 rounded-xl border ${
+                          score?.status === 'Submitted' 
+                            ? 'bg-green-50 border-green-200' 
+                            : 'bg-yellow-50 border-yellow-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-[#0A2540] font-medium">{assignment.subject_name}</p>
+                            <p className="text-sm text-gray-600">Teacher: {assignment.teacher_name}</p>
+                          </div>
+
+                          {score ? (
+                            <div className="flex items-center gap-6">
+                              <div className="text-center">
+                                <p className="text-xs text-gray-600">CA1</p>
+                                <p className="text-[#0A2540] font-bold">{score.ca1}</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-xs text-gray-600">CA2</p>
+                                <p className="text-[#0A2540] font-bold">{score.ca2}</p>
+                              </div>
+                              <div className="text-center">
+                                <p className="text-xs text-gray-600">Exam</p>
+                                <p className="text-[#0A2540] font-bold">{score.exam}</p>
+                              </div>
+                              <div className="text-center px-4 py-2 bg-white rounded-lg border border-[#0A2540]/20">
+                                <p className="text-xs text-gray-600">Total</p>
+                                <p className="text-[#0A2540] font-bold">{score.total}</p>
+                              </div>
+                              <div className="text-center">
+                                <Badge className={`rounded-xl ${
+                                  score.grade === 'A' ? 'bg-green-100 text-green-800 border-green-300' :
+                                  score.grade === 'B' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+                                  score.grade === 'C' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                                  score.grade === 'D' ? 'bg-orange-100 text-orange-800 border-orange-300' :
+                                  'bg-red-100 text-red-800 border-red-300'
+                                }`}>
+                                  Grade {score.grade}
+                                </Badge>
+                              </div>
+                              <Badge className="bg-green-100 text-green-800 border-green-300 rounded-xl">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Submitted
+                              </Badge>
+                            </div>
+                          ) : (
+                            <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 rounded-xl">
+                              <AlertCircle className="w-3 h-3 mr-1" />
+                              Not Submitted
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Affective & Psychomotor Forms */}
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Affective Domain Form */}
+            <Card className="border-[#0A2540]/10">
+              <CardHeader className="bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white rounded-t-xl">
+                <CardTitle>Affective Domain Assessment</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6 space-y-4">
+                {[
+                  { key: 'attentiveness', label: 'Attentiveness' },
+                  { key: 'honesty', label: 'Honesty' },
+                  { key: 'punctuality', label: 'Punctuality' },
+                  { key: 'neatness', label: 'Neatness' }
+                ].map((field) => (
+                  <div key={field.key} className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">{field.label}</Label>
+                    <div className="flex items-center space-x-4">
+                      <div className="flex items-center space-x-2">
+                        {[1, 2, 3, 4, 5].map((rating) => (
+                          <button
+                            key={rating}
+                            type="button"
+                            onClick={() => setAffectiveData(prev => ({ ...prev, [field.key]: rating }))}
+                            className={`w-8 h-8 rounded-full border-2 font-semibold text-xs transition-all ${
+                              affectiveData[field.key as keyof typeof affectiveData] === rating
+                                ? 'bg-purple-600 border-purple-600 text-white'
+                                : 'bg-white border-gray-300 text-gray-600 hover:border-purple-400'
+                            }`}
+                            disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                          >
+                            {rating}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-sm text-gray-500">(1=Poor, 5=Excellent)</span>
+                    </div>
+                    <Textarea
+                      value={affectiveData[`${field.key}_remark` as keyof typeof affectiveData] as string}
+                      onChange={(e) => setAffectiveData(prev => ({ ...prev, [`${field.key}_remark`]: e.target.value }))}
+                      placeholder={`Add remarks for ${field.label.toLowerCase()}...`}
+                      className="min-h-[60px] text-sm"
+                      disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                    />
+                  </div>
+                ))}
+                
+                <Button
+                  onClick={handleSaveAffective}
+                  disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                >
+                  Save Affective Assessment
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Psychomotor Domain Form */}
+            <Card className="border-[#0A2540]/10">
+              <CardHeader className="bg-gradient-to-r from-[#EC4899] to-[#DB2777] text-white rounded-t-xl">
+                <CardTitle>Psychomotor Domain Assessment</CardTitle>
+              </CardHeader>
+              <CardContent className="p-6 space-y-4">
+                {[
+                  { key: 'sports', label: 'Sports' },
+                  { key: 'handwork', label: 'Handwork' },
+                  { key: 'drawing', label: 'Drawing' },
+                  { key: 'music', label: 'Music' }
+                ].map((field) => (
+                  <div key={field.key} className="space-y-2">
+                    <Label className="text-sm font-medium text-gray-700">{field.label}</Label>
+                    <div className="flex items-center space-x-4">
+                      <div className="flex items-center space-x-2">
+                        {[1, 2, 3, 4, 5].map((rating) => (
+                          <button
+                            key={rating}
+                            type="button"
+                            onClick={() => setPsychomotorData(prev => ({ ...prev, [field.key]: rating }))}
+                            className={`w-8 h-8 rounded-full border-2 font-semibold text-xs transition-all ${
+                              psychomotorData[field.key as keyof typeof psychomotorData] === rating
+                                ? 'bg-pink-600 border-pink-600 text-white'
+                                : 'bg-white border-gray-300 text-gray-600 hover:border-pink-400'
+                            }`}
+                            disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                          >
+                            {rating}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="text-sm text-gray-500">(1=Poor, 5=Excellent)</span>
+                    </div>
+                    <Textarea
+                      value={psychomotorData[`${field.key}_remark` as keyof typeof psychomotorData] as string}
+                      onChange={(e) => setPsychomotorData(prev => ({ ...prev, [`${field.key}_remark`]: e.target.value }))}
+                      placeholder={`Add remarks for ${field.label.toLowerCase()}...`}
+                      className="min-h-[60px] text-sm"
+                      disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                    />
+                  </div>
+                ))}
+                
+                <Button
+                  onClick={handleSavePsychomotor}
+                  disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                  className="w-full bg-pink-600 hover:bg-pink-700 text-white"
+                >
+                  Save Psychomotor Assessment
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Class Teacher Comment */}
+          <Card className="border-[#0A2540]/10">
+            <CardHeader className="bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-t-xl">
+              <CardTitle>Class Teacher Comment</CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 space-y-4">
+              {/* Auto-comment toggle */}
+              <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
+                <input
+                  type="checkbox"
+                  id="auto-comment"
+                  checked={useAutoComment}
+                  onChange={(e) => {
+                    setUseAutoComment(e.target.checked);
+                    if (e.target.checked && selectedStudent) {
+                      const options = generateMultipleCommentOptions(
+                        studentResultData.averageScore,
+                        studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0,
+                        studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0
+                      );
+                      setCommentOptions(options);
+                      setShowCommentOptions(true);
+                    } else {
+                      setShowCommentOptions(false);
+                    }
+                  }}
+                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                />
+                <Label htmlFor="auto-comment" className="text-sm font-medium text-blue-900">
+                  Generate automatic comment based on student performance
+                </Label>
+              </div>
+
+              {/* Comment options selection */}
+              {showCommentOptions && commentOptions.length > 0 && (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm font-semibold text-blue-800 mb-3">Choose from generated comments:</p>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {commentOptions.map((option, index) => (
+                      <div key={index} className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-blue-100 hover:border-blue-300 cursor-pointer transition-colors"
+                           onClick={() => setClassTeacherComment(option)}>
+                        <input
+                          type="radio"
+                          name="comment-option"
+                          checked={classTeacherComment === option}
+                          onChange={() => setClassTeacherComment(option)}
+                          className="mt-1 w-4 h-4 text-blue-600"
+                        />
+                        <p className="text-sm text-gray-700 flex-1">{option}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const options = generateMultipleCommentOptions(
+                          studentResultData.averageScore,
+                          studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0,
+                          studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0
+                        );
+                        setCommentOptions(options);
+                      }}
+                      className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                    >
+                      <RefreshCw className="w-4 h-4 mr-1" />
+                      Generate More Options
+                    </Button>
+                    <span className="text-xs text-gray-500">
+                      Click on any comment to select it, or generate more options
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Position and performance summary */}
+              {selectedStudent && (
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-600">
+                      {studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0}
+                    </p>
+                    <p className="text-sm text-gray-600">Position in Class</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">
+                      {studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0}
+                    </p>
+                    <p className="text-sm text-gray-600">Total Students</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Auto-comment preview */}
+              {useAutoComment && selectedStudent && (
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm font-semibold text-green-800 mb-2">Auto-generated Comment Preview:</p>
+                  <p className="text-sm text-green-700">
+                    {generateAutoComment(
+                      studentResultData.averageScore,
+                      studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0,
+                      studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0
+                    )}
+                  </p>
+                </div>
+              )}
+
+              <Textarea
+                value={useAutoComment 
+                  ? classTeacherComment || ""
+                  : classTeacherComment || studentResultData.existingResult?.class_teacher_comment || ""
+                }
+                onChange={(e) => !useAutoComment && setClassTeacherComment(e.target.value)}
+                placeholder="Enter your comment for this student..."
+                className="min-h-32 rounded-xl border-[#0A2540]/20"
+                disabled={useAutoComment || studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+              />
+              {studentResultData.existingResult?.status === 'Submitted' && (
+                <p className="text-sm text-gray-600 mt-2">
+                  This result has been submitted to admin and cannot be edited.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Submit Button */}
+          <Card className="border-[#0A2540]/10">
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[#0A2540] font-medium mb-1">Ready to Submit?</p>
+                  <p className="text-sm text-gray-600">
+                    {studentResultData.isComplete 
+                      ? "All requirements met. You can submit this result for approval." 
+                      : "Complete all scores and assessments before submitting."}
+                  </p>
+                </div>
+
+                <Button
+                  onClick={handleSubmitResult}
+                  disabled={!studentResultData.isComplete || (!useAutoComment && !classTeacherComment.trim()) || (useAutoComment && !classTeacherComment.trim() && !showCommentOptions) || studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                  className="bg-[#10B981] hover:bg-[#059669] text-white rounded-xl px-8"
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  {studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'
+                    ? 'Already Submitted'
+                    : 'Submit Result'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
