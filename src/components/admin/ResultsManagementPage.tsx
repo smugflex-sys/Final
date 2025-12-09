@@ -23,7 +23,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { StudentResultCard } from "../shared/StudentResultCard";
 import { ResultSheetViewerButton } from "./ResultSheetViewer";
@@ -46,6 +46,8 @@ export function ResultsManagementPage() {
     teachers,
     loadCompiledResultsFromAPI,
     addNotification,
+    getAllAcademicYears,
+    getCompiledResultsByYearAndTerm,
   } = useSchool();
   
   // Bulk selection state
@@ -62,6 +64,7 @@ export function ResultsManagementPage() {
   const [selectedClassId, setSelectedClassId] = useState<string>("all");
   const [selectedTerm, setSelectedTerm] = useState<string>(currentTerm);
   const [selectedYear, setSelectedYear] = useState<string>(currentAcademicYear);
+  const [academicYears, setAcademicYears] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedResult, setSelectedResult] = useState<number | null>(null);
   const [principalComment, setPrincipalComment] = useState("");
@@ -72,7 +75,40 @@ export function ResultsManagementPage() {
   // Load data on component mount
   useEffect(() => {
     loadCompiledResultsFromAPI();
+    loadAcademicYears();
   }, []);
+
+  const loadAcademicYears = async () => {
+    try {
+      const years = await getAllAcademicYears();
+      setAcademicYears(years);
+    } catch (error) {
+      console.error('Error loading academic years:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedYear && selectedTerm) {
+      loadResultsForYearAndTerm();
+    }
+  }, [selectedYear, selectedTerm]);
+
+  const loadResultsForYearAndTerm = async () => {
+    if (selectedYear === currentAcademicYear && selectedTerm === currentTerm) {
+      // Load current session results normally
+      loadCompiledResultsFromAPI();
+    } else {
+      // Load historical results
+      try {
+        const results = await getCompiledResultsByYearAndTerm(selectedYear, selectedTerm);
+        // Update the compiledResults in context temporarily
+        // This is a simple approach - in production you might want a separate state
+        console.log('Loaded historical results:', results);
+      } catch (error) {
+        console.error('Error loading historical results:', error);
+      }
+    }
+  };
 
   // Filter results based on active tab (must be called before early returns)
   const filteredResults = useMemo(() => {
@@ -90,6 +126,9 @@ export function ResultsManagementPage() {
       results = results.filter((r: any) => r.status === "Approved");
     } else if (activeTab === "rejected") {
       results = results.filter((r: any) => r.status === "Rejected");
+    } else if (activeTab === "all") {
+      // Show all results EXCEPT rejected ones
+      results = results.filter((r: any) => r.status !== "Rejected");
     }
 
     // Search filter
@@ -445,49 +484,75 @@ export function ResultsManagementPage() {
   }, [filteredResults, selectedClassId]);
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header with View Buttons */}
-      <div className="flex items-center justify-between">
+    <div className="p-4 space-y-4">
+      {/* Compact Header */}
+      <div className="flex items-center justify-between bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
         <div>
-          <h1 className="text-[#0A2540] mb-2">Results Management</h1>
-          <p className="text-gray-600">
-            Approve, view, and manage student results
-          </p>
+          <h1 className="text-xl font-semibold text-gray-900">Results Management</h1>
+          <p className="text-sm text-gray-500 mt-1">Approve and manage student results</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <Button
             variant="outline"
+            size="sm"
             onClick={() => setViewMode("viewAll")}
-            className="rounded-xl border-[#3B82F6] text-[#3B82F6] hover:bg-[#3B82F6] hover:text-white"
+            className="border-blue-200 text-blue-700 hover:bg-blue-50"
           >
-            <BarChart3 className="w-4 h-4 mr-2" />
-            View All Results
+            <BarChart3 className="w-4 h-4 mr-1" />
+            All Results
           </Button>
           <Button
             variant="outline"
+            size="sm"
             onClick={() => setViewMode("viewSheets")}
-            className="rounded-xl border-[#10B981] text-[#10B981] hover:bg-[#10B981] hover:text-white"
+            className="border-green-200 text-green-700 hover:bg-green-50"
           >
-            <FileText className="w-4 h-4 mr-2" />
-            View Result Sheets
+            <FileText className="w-4 h-4 mr-1" />
+            Sheets
           </Button>
         </div>
       </div>
 
-      {/* Filters */}
-      <Card className="border-[#0A2540]/10">
-        <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl">
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="w-5 h-5" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-6">
-          <div className="grid md:grid-cols-4 gap-4">
+      {/* Compact Filters */}
+      <Card className="border-gray-200 shadow-sm">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <Filter className="w-4 h-4 text-gray-500" />
+            <span className="text-sm font-medium text-gray-700">Filters</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div>
-              <Label className="text-[#0A2540] mb-2 block">Class</Label>
+              <Label className="text-xs text-gray-600 mb-1 block">Year</Label>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="h-9 rounded-lg border-gray-200 text-sm">
+                  <SelectValue placeholder="Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {academicYears.map((year) => (
+                    <SelectItem key={year} value={year}>
+                      {year}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-gray-600 mb-1 block">Term</Label>
+              <Select value={selectedTerm} onValueChange={setSelectedTerm}>
+                <SelectTrigger className="h-9 rounded-lg border-gray-200 text-sm">
+                  <SelectValue placeholder="Term" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="First Term">First</SelectItem>
+                  <SelectItem value="Second Term">Second</SelectItem>
+                  <SelectItem value="Third Term">Third</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-gray-600 mb-1 block">Class</Label>
               <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-                <SelectTrigger className="h-12 rounded-xl border-[#0A2540]/20">
+                <SelectTrigger className="h-9 rounded-lg border-gray-200 text-sm">
                   <SelectValue placeholder="All Classes" />
                 </SelectTrigger>
                 <SelectContent>
@@ -500,133 +565,113 @@ export function ResultsManagementPage() {
                 </SelectContent>
               </Select>
             </div>
-
             <div>
-              <Label className="text-[#0A2540] mb-2 block">Term</Label>
-              <Select value={selectedTerm} onValueChange={setSelectedTerm}>
-                <SelectTrigger className="h-12 rounded-xl border-[#0A2540]/20">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="First Term">First Term</SelectItem>
-                  <SelectItem value="Second Term">Second Term</SelectItem>
-                  <SelectItem value="Third Term">Third Term</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label className="text-[#0A2540] mb-2 block">Academic Year</Label>
-              <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger className="h-12 rounded-xl border-[#0A2540]/20">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="2024/2025">2024/2025</SelectItem>
-                  <SelectItem value="2025/2026">2025/2026</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label className="text-[#0A2540] mb-2 block">Search Student</Label>
+              <Label className="text-xs text-gray-600 mb-1 block">Search</Label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400 w-3 h-3" />
                 <Input
+                  placeholder="Student name..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Name or Admission No"
-                  className="h-12 pl-10 rounded-xl border-[#0A2540]/20"
+                  className="pl-7 h-9 rounded-lg border-gray-200 text-sm"
                 />
               </div>
+            </div>
+            <div className="flex items-end">
+              {/* Session Indicator */}
+              {selectedYear !== currentAcademicYear || selectedTerm !== currentTerm ? (
+                <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-md">
+                  <Calendar className="w-3 h-3" />
+                  <span>Historical</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-md">
+                  <Calendar className="w-3 h-3" />
+                  <span>Current</span>
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Tabs */}
+      {/* Compact Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-4 bg-gray-100 rounded-xl p-1">
-          <TabsTrigger value="pending" className="rounded-lg data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-900">
-            Pending Approval ({compiledResults.filter(r => r.status === "Submitted" && r.term === selectedTerm && r.academic_year === selectedYear).length})
+        <TabsList className="grid w-full grid-cols-4 bg-gray-50 rounded-lg p-1 h-9">
+          <TabsTrigger value="pending" className="rounded-md text-xs data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-800">
+            Pending ({compiledResults.filter(r => r.status === "Submitted" && r.term === selectedTerm && r.academic_year === selectedYear).length})
           </TabsTrigger>
-          <TabsTrigger value="approved" className="rounded-lg data-[state=active]:bg-green-100 data-[state=active]:text-green-900">
+          <TabsTrigger value="approved" className="rounded-md text-xs data-[state=active]:bg-green-100 data-[state=active]:text-green-800">
             Approved ({compiledResults.filter(r => r.status === "Approved" && r.term === selectedTerm && r.academic_year === selectedYear).length})
           </TabsTrigger>
-          <TabsTrigger value="rejected" className="rounded-lg data-[state=active]:bg-red-100 data-[state=active]:text-red-900">
+          <TabsTrigger value="rejected" className="rounded-md text-xs data-[state=active]:bg-red-100 data-[state=active]:text-red-800">
             Rejected ({compiledResults.filter(r => r.status === "Rejected" && r.term === selectedTerm && r.academic_year === selectedYear).length})
           </TabsTrigger>
-          <TabsTrigger value="all" className="rounded-lg data-[state=active]:bg-blue-100 data-[state=active]:text-blue-900">
-            All ({compiledResults.filter(r => r.term === selectedTerm && r.academic_year === selectedYear).length})
+          <TabsTrigger value="all" className="rounded-md text-xs data-[state=active]:bg-blue-100 data-[state=active]:text-blue-800">
+            All ({compiledResults.filter(r => r.status !== "Rejected" && r.term === selectedTerm && r.academic_year === selectedYear).length})
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value={activeTab} className="mt-6">
-          {/* Bulk Actions */}
+        <TabsContent value={activeTab} className="mt-4">
+          {/* Compact Bulk Actions */}
           {activeTab === "pending" && filteredResults.length > 0 && (
-            <Card className="border-[#0A2540]/10 mb-4">
-              <CardContent className="p-4">
+            <Card className="border-gray-200 shadow-sm mb-3">
+              <CardContent className="p-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <input
                       type="checkbox"
                       checked={selectedResults.length === filteredResults.length && filteredResults.length > 0}
                       onChange={handleSelectAll}
-                      className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                      className="w-4 h-4 text-blue-600 rounded border-gray-300"
                     />
                     <span className="text-sm text-gray-600">
-                      Select All ({filteredResults.length} results)
+                      {selectedResults.length} of {filteredResults.length} selected
                     </span>
-                    {selectedResults.length > 0 && (
-                      <span className="text-sm font-medium text-blue-600">
-                        {selectedResults.length} selected
-                      </span>
-                    )}
                   </div>
-                  
-                  {selectedResults.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowBulkApproveDialog(true)}
-                        className="text-green-600 border-green-600 hover:bg-green-50"
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        Approve Selected ({selectedResults.length})
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowBulkRejectDialog(true)}
-                        className="text-red-600 border-red-600 hover:bg-red-50"
-                      >
-                        <XCircle className="w-4 h-4 mr-2" />
-                        Reject Selected ({selectedResults.length})
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => setShowBulkApproveDialog(true)}
+                      disabled={selectedResults.length === 0}
+                      className="bg-green-600 hover:bg-green-700 text-white h-8"
+                    >
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Approve ({selectedResults.length})
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowBulkRejectDialog(true)}
+                      disabled={selectedResults.length === 0}
+                      variant="destructive"
+                      className="h-8"
+                    >
+                      <XCircle className="w-3 h-3 mr-1" />
+                      Reject ({selectedResults.length})
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Results List */}
-          <Card className="border-[#0A2540]/10">
-            <CardHeader className="bg-gradient-to-r from-[#10B981] to-[#059669] text-white rounded-t-xl">
-              <CardTitle>
+          {/* Compact Results List */}
+          <Card className="border-gray-200 shadow-sm">
+            <CardHeader className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+              <CardTitle className="text-sm font-medium text-gray-700">
                 {activeTab === "pending" && "Pending Approval"}
                 {activeTab === "approved" && "Approved Results"}
                 {activeTab === "rejected" && "Rejected Results"}
                 {activeTab === "all" && "All Results"}
+                <span className="ml-2 text-xs text-gray-500">({filteredResults.length})</span>
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-4">
               {studentsWithResults.length === 0 ? (
-                <div className="text-center py-12">
-                  <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-600 mb-2">No results found</p>
-                  <p className="text-gray-500 text-sm">
+                <div className="text-center py-8">
+                  <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-sm text-gray-500">No results found</p>
+                  <p className="text-xs text-gray-400">
                     {activeTab === "pending" && "No results pending approval"}
                     {activeTab === "approved" && "No approved results"}
                     {activeTab === "rejected" && "No rejected results"}
@@ -634,32 +679,32 @@ export function ResultsManagementPage() {
                   </p>
                 </div>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {studentsWithResults.map((studentData) => (
                     <div
                       key={studentData!.id}
-                      className="p-4 border border-[#0A2540]/10 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all"
+                      className="p-3 border border-gray-200 rounded-lg hover:border-gray-300 hover:bg-gray-50 transition-all"
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-3">
                           {activeTab === "pending" && (
                             <input
                               type="checkbox"
                               checked={selectedResults.includes(studentData!.result.id)}
                               onChange={() => handleSelectResult(studentData!.result.id)}
-                              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                              className="w-4 h-4 text-blue-600 rounded border-gray-300"
                             />
                           )}
-                          <div className="w-12 h-12 rounded-full bg-[#3B82F6] text-white flex items-center justify-center font-bold">
+                          <div className="w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-medium">
                             {studentData!.firstName[0]}
                             {studentData!.lastName[0]}
                           </div>
 
                           <div>
-                            <p className="text-[#0A2540] font-medium">
+                            <p className="text-base font-semibold text-gray-800 leading-tight">
                               {studentData!.firstName} {studentData!.lastName}
                             </p>
-                            <p className="text-sm text-gray-600">
+                            <p className="text-xs text-gray-500 font-medium">
                               {studentData!.admissionNumber} • {studentData!.className}
                             </p>
                           </div>
@@ -667,27 +712,27 @@ export function ResultsManagementPage() {
 
                         <div className="flex items-center gap-4">
                           <div className="text-right">
-                            <p className="text-sm text-gray-600">Average</p>
-                            <p className="text-[#0A2540] font-bold text-lg">
+                            <p className="text-xs text-gray-500 font-medium">Average</p>
+                            <p className="text-lg font-bold text-gray-800">
                               {studentData!.result.average_score}%
                             </p>
                           </div>
 
                           <div className="text-right">
-                            <p className="text-sm text-gray-600">Position</p>
-                            <Badge className="bg-green-100 text-green-800 border-green-300 rounded-xl">
+                            <p className="text-xs text-gray-500 font-medium">Position</p>
+                            <Badge className="bg-green-50 text-green-700 border-green-200 rounded-lg text-xs font-medium px-2 py-1">
                               {studentData!.result.position}/{studentData!.result.total_students}
                             </Badge>
                           </div>
 
                           <div>
                             <Badge
-                              className={`rounded-xl ${
+                              className={`rounded-lg text-xs font-medium px-2 py-1 ${
                                 studentData!.result.status === "Submitted"
-                                  ? "bg-yellow-100 text-yellow-800 border-yellow-300"
+                                  ? "bg-yellow-50 text-yellow-700 border-yellow-200"
                                   : studentData!.result.status === "Approved"
-                                  ? "bg-green-100 text-green-800 border-green-300"
-                                  : "bg-red-100 text-red-800 border-red-300"
+                                  ? "bg-green-50 text-green-700 border-green-200"
+                                  : "bg-red-50 text-red-700 border-red-200"
                               }`}
                             >
                               {studentData!.result.status}
@@ -708,9 +753,12 @@ export function ResultsManagementPage() {
                               </DialogTrigger>
                               <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
                                 <DialogHeader>
-                                  <DialogTitle description="Review and approve or reject student results">
+                                  <DialogTitle>
                                     Review Result - {studentData!.firstName} {studentData!.lastName}
                                   </DialogTitle>
+                                  <DialogDescription>
+                                    Review and approve or reject student results
+                                  </DialogDescription>
                                 </DialogHeader>
 
                               <div className="space-y-6">

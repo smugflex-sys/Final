@@ -11,6 +11,7 @@ import {
   CreditCard,
   BarChart3,
   Building2,
+  MessageSquare,
   Lock,
   LogOut
 } from "lucide-react";
@@ -28,7 +29,9 @@ import { PaymentReportsPage } from "./accountant/PaymentReportsPage";
 import { BankAccountSettingsPage } from "./accountant/BankAccountSettingsPage";
 import { ManualPaymentEntryPage } from "./admin/ManualPaymentEntryPage";
 import { ChangePasswordPage } from "./ChangePasswordPage";
-import { NotificationsPage } from "./NotificationsPage";
+import { AccountantMessagePage } from "./accountant/MessageParentsPage";
+import { ViewNotificationsPage } from "./shared/ViewNotificationsPage";
+import { Dialog, DialogContent } from "./ui/dialog";
 import { useSchool } from "../contexts/SchoolContext";
 
 interface AccountantDashboardProps {
@@ -50,8 +53,8 @@ export function AccountantDashboard({ onLogout }: AccountantDashboardProps) {
   const [activeItem, setActiveItem] = useState("dashboard");
 
   // Get current accountant
-  const currentAccountant = currentUser ? accountants.find(a => a.id === currentUser.linked_id) : null;
-  const accountantName = currentAccountant ? `${currentAccountant.firstName} ${currentAccountant.lastName}` : 'Accountant';
+  const currentAccountant = currentUser && accountants.length > 0 ? accountants.find(a => a.id === currentUser.linked_id) : null;
+  const accountantName = currentAccountant ? `${currentAccountant.firstName || ''} ${currentAccountant.lastName || ''}`.trim() : 'Accountant';
 
   const sidebarItems = [
     { icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard", id: "dashboard" },
@@ -62,7 +65,7 @@ export function AccountantDashboard({ onLogout }: AccountantDashboardProps) {
     { icon: <BarChart3 className="w-5 h-5" />, label: "Payment Reports", id: "payment-reports" },
     { icon: <FileText className="w-5 h-5" />, label: "Payment History", id: "payment-history" },
     { icon: <Building2 className="w-5 h-5" />, label: "Bank Settings", id: "bank-settings" },
-    { icon: <Bell className="w-5 h-5" />, label: "Notifications", id: "notifications" },
+    { icon: <MessageSquare className="w-5 h-5" />, label: "Message Parents", id: "message-parents" },
     { icon: <Lock className="w-5 h-5" />, label: "Change Password", id: "change-password" },
     { icon: <LogOut className="w-5 h-5" />, label: "Logout", id: "logout" },
   ];
@@ -96,6 +99,9 @@ export function AccountantDashboard({ onLogout }: AccountantDashboardProps) {
 
   const todayRevenue = todayPayments.reduce((sum, p) => sum + p.amount, 0);
 
+  // Notification dialog state
+  const [notificationDialogOpen, setNotificationDialogOpen] = useState(false);
+
   return (
     <div className="min-h-screen bg-[#F4F6F9]">
       <DashboardSidebar
@@ -111,6 +117,7 @@ export function AccountantDashboard({ onLogout }: AccountantDashboardProps) {
           userRole="Accountant"
           notificationCount={unreadNotifications.length}
           onLogout={onLogout}
+          onNotificationClick={() => setNotificationDialogOpen(true)}
         />
 
         <main className="p-4 md:p-6 max-w-7xl mx-auto">
@@ -345,15 +352,25 @@ export function AccountantDashboard({ onLogout }: AccountantDashboardProps) {
         
         {activeItem !== "dashboard" && (
           <main className="p-4 md:p-6 max-w-7xl mx-auto">
+            {activeItem === "set-fees" && <SetFeesPage />}
+            {activeItem === "record-payments" && <RecordPaymentPage />}
+            {activeItem === "manual-payment-entry" && <ManualPaymentEntryPage />}
             {activeItem === "payment-reports" && <PaymentReportsPage />}
             {activeItem === "payment-history" && <PaymentHistoryPage />}
             {activeItem === "bank-settings" && <BankAccountSettingsPage />}
-            {activeItem === "notifications" && <NotificationsPage />}
+            {activeItem === "message-parents" && <AccountantMessagePage />}
             {activeItem === "change-password" && <ChangePasswordPage />}
             {activeItem === "verify-receipts" && <VerifyReceiptsPage />}
           </main>
         )}
       </div>
+
+      {/* Notification Dialog */}
+      <Dialog open={notificationDialogOpen} onOpenChange={setNotificationDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <ViewNotificationsPage />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Label } from "../ui/label";
 import { Badge } from "../ui/badge";
 import { useSchool } from "../../contexts/SchoolContext";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -27,32 +27,25 @@ export function PaymentReportsPage() {
   const [filterYear, setFilterYear] = useState(currentAcademicYear);
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const getFilteredData = () => {
-    let filteredBalances = studentFeeBalances.filter(
-      (balance) => balance.term === filterTerm && balance.academicYear === filterYear
+  const getFilteredData = (): any[] => {
+    return studentFeeBalances.filter(
+      (balance) =>
+        (filterClass === "all" || balance.class_id === Number(filterClass)) &&
+        balance.academic_year === filterYear &&
+        balance.term === filterTerm
     );
-
-    if (filterClass !== "all") {
-      filteredBalances = filteredBalances.filter((b) => b.classId === Number(filterClass));
-    }
-
-    if (filterStatus !== "all") {
-      filteredBalances = filteredBalances.filter((b) => b.status === filterStatus);
-    }
-
-    return filteredBalances;
   };
 
   const calculateStats = () => {
     const filteredBalances = getFilteredData();
     
-    const totalExpected = filteredBalances.reduce((sum, b) => sum + b.totalFeeRequired, 0);
-    const totalCollected = filteredBalances.reduce((sum, b) => sum + b.totalPaid, 0);
-    const totalOutstanding = filteredBalances.reduce((sum, b) => sum + b.balance, 0);
+    const totalExpected = filteredBalances.reduce((sum: number, b: any) => sum + b.total_fee_required, 0);
+    const totalCollected = filteredBalances.reduce((sum: number, b: any) => sum + b.total_paid, 0);
+    const totalOutstanding = filteredBalances.reduce((sum: number, b: any) => sum + b.balance, 0);
     
-    const fullyPaid = filteredBalances.filter((b) => b.status === "Paid").length;
-    const partiallyPaid = filteredBalances.filter((b) => b.status === "Partial").length;
-    const unpaid = filteredBalances.filter((b) => b.status === "Unpaid").length;
+    const fullyPaid = filteredBalances.filter((b: any) => b.status === "Paid").length;
+    const partiallyPaid = filteredBalances.filter((b: any) => b.status === "Partial").length;
+    const unpaid = filteredBalances.filter((b: any) => b.status === "Unpaid").length;
     
     const collectionRate = totalExpected > 0 ? ((totalCollected / totalExpected) * 100).toFixed(1) : "0";
 
@@ -75,9 +68,9 @@ export function PaymentReportsPage() {
 
     // Header
     doc.setFontSize(18);
-    doc.text(schoolSettings.schoolName, 105, 15, { align: "center" });
+    doc.text(schoolSettings.school_name, 105, 15, { align: "center" });
     doc.setFontSize(12);
-    doc.text(schoolSettings.schoolMotto, 105, 22, { align: "center" });
+    doc.text(schoolSettings.school_motto, 105, 22, { align: "center" });
     
     // Report Title
     doc.setFontSize(14);
@@ -103,15 +96,15 @@ export function PaymentReportsPage() {
     doc.text(`Unpaid: ${stats.unpaid}`, 110, 90);
 
     // Table Data
-    const tableData = filteredBalances.map((balance) => {
-      const student = students.find((s) => s.id === balance.studentId);
-      const classInfo = classes.find((c) => c.id === balance.classId);
+    const tableData = filteredBalances.map((balance: any) => {
+      const student = students.find((s) => s.id === balance.student_id);
+      const classInfo = classes.find((c) => c.id === balance.class_id);
       
       return [
         student ? `${student.firstName} ${student.lastName}` : "N/A",
         classInfo?.name || "N/A",
-        `₦${balance.totalFeeRequired.toLocaleString()}`,
-        `₦${balance.totalPaid.toLocaleString()}`,
+        `₦${balance.total_fee_required.toLocaleString()}`,
+        `₦${balance.total_paid.toLocaleString()}`,
         `₦${balance.balance.toLocaleString()}`,
         balance.status,
       ];
@@ -135,7 +128,7 @@ export function PaymentReportsPage() {
     const stats = calculateStats();
 
     let csv = "Payment Report\n";
-    csv += `${schoolSettings.schoolName}\n`;
+    csv += `${schoolSettings.school_name}\n`;
     csv += `Term: ${filterTerm}, Academic Year: ${filterYear}\n`;
     csv += `Generated: ${new Date().toLocaleDateString()}\n\n`;
     
@@ -151,15 +144,15 @@ export function PaymentReportsPage() {
 
     csv += "Student Name,Admission Number,Class,Required,Paid,Balance,Status\n";
     
-    filteredBalances.forEach((balance) => {
-      const student = students.find((s) => s.id === balance.studentId);
-      const classInfo = classes.find((c) => c.id === balance.classId);
+    filteredBalances.forEach((balance: any) => {
+      const student = students.find((s) => s.id === balance.student_id);
+      const classInfo = classes.find((c) => c.id === balance.class_id);
       
       csv += `${student ? `${student.firstName} ${student.lastName}` : "N/A"},`;
       csv += `${student?.admissionNumber || "N/A"},`;
       csv += `${classInfo?.name || "N/A"},`;
-      csv += `${balance.totalFeeRequired},`;
-      csv += `${balance.totalPaid},`;
+      csv += `${balance.total_fee_required},`;
+      csv += `${balance.total_paid},`;
       csv += `${balance.balance},`;
       csv += `${balance.status}\n`;
     });
@@ -175,7 +168,7 @@ export function PaymentReportsPage() {
   };
 
   const stats = calculateStats();
-  const filteredBalances = getFilteredData();
+  const filteredBalances: any[] = getFilteredData();
   const activeClasses = classes.filter((c) => c.status === "Active");
 
   return (
@@ -403,9 +396,9 @@ export function PaymentReportsPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredBalances.map((balance) => {
-                    const student = students.find((s) => s.id === balance.studentId);
-                    const classInfo = classes.find((c) => c.id === balance.classId);
+                  filteredBalances.map((balance: any) => {
+                    const student = students.find((s) => s.id === balance.student_id);
+                    const classInfo = classes.find((c) => c.id === balance.class_id);
                     
                     return (
                       <tr key={balance.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB]">
@@ -414,10 +407,10 @@ export function PaymentReportsPage() {
                         </td>
                         <td className="p-4 text-[#6B7280]">{classInfo?.name || "N/A"}</td>
                         <td className="p-4 text-right text-[#1F2937]">
-                          ₦{balance.totalFeeRequired.toLocaleString()}
+                          ₦{balance.total_fee_required.toLocaleString()}
                         </td>
                         <td className="p-4 text-right text-[#10B981]">
-                          ₦{balance.totalPaid.toLocaleString()}
+                          ₦{balance.total_paid.toLocaleString()}
                         </td>
                         <td className="p-4 text-right text-[#EF4444]">
                           ₦{balance.balance.toLocaleString()}

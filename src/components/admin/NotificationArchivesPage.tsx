@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Filter, Archive, Bell, Trash2, Eye, Calendar, Users, MessageSquare, AlertCircle } from 'lucide-react';
+import { Search, Filter, Archive, Bell, Trash2, Eye, Calendar, Users, MessageSquare, AlertCircle, Reply, Send } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
@@ -21,20 +21,29 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import { Checkbox } from '../ui/checkbox';
+import { Textarea } from '../ui/textarea';
+import { Label } from '../ui/label';
 import { useSchool } from '../../contexts/SchoolContext';
+import { toast } from 'sonner';
 
 export function NotificationArchivesPage() {
-  const { notifications } = useSchool();
+  const { notifications, addNotification, currentUser, markNotificationAsRead } = useSchool();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedNotification, setSelectedNotification] = useState<any>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [replyDialogOpen, setReplyDialogOpen] = useState(false);
+  const [replyMessage, setReplyMessage] = useState('');
+  const [replyingTo, setReplyingTo] = useState<any>(null);
 
   // Transform real notifications for display
   const notificationsData = notifications.map(n => {
     // Calculate read count based on readBy array
     const readCount = n.readBy.length;
+    
+    // Check if this is a parent message (sent to admin with type 'message')
+    const isParentMessage = (n.type as any) === 'message' && (n.targetAudience as any) === 'admin';
     
     // Estimate recipient count based on target audience
     let recipientCount = 0;
@@ -54,19 +63,24 @@ export function NotificationArchivesPage() {
     } else if (n.targetAudience === 'accountants') {
       recipientText = 'Accountants';
       recipientCount = 5; // Estimated
+    } else if ((n.targetAudience as any) === 'admin') {
+      recipientText = isParentMessage ? 'Parent Message' : 'Admin Only';
+      recipientCount = 1;
     }
 
     return {
       id: n.id.toString(),
       title: n.title,
       message: n.message,
-      type: n.type === 'info' ? 'announcement' : n.type === 'warning' ? 'alert' : n.type === 'success' ? 'update' : 'reminder',
+      type: isParentMessage ? 'parent_message' : (n.type === 'info' ? 'announcement' : n.type === 'warning' ? 'alert' : n.type === 'success' ? 'update' : 'reminder'),
       recipient: recipientText,
       recipientCount,
-      sentBy: 'Admin Office', // You can enhance this if you store sender info
+      sentBy: isParentMessage ? 'Parent' : 'Admin Office',
       sentDate: new Date(n.sentDate).toLocaleDateString(),
       status: 'sent', // All notifications in archive are sent
-      readCount
+      readCount,
+      isParentMessage,
+      originalNotification: n // Store original for reply functionality
     };
   });
 
@@ -82,8 +96,10 @@ export function NotificationArchivesPage() {
     return matchesSearch && matchesType && matchesStatus;
   });
 
-  const getTypeBadge = (type: Notification['type']) => {
+  const getTypeBadge = (type: string) => {
     switch (type) {
+      case 'parent_message':
+        return <Badge className="bg-purple-100 text-purple-800 border-purple-300"><MessageSquare className="w-3 h-3 mr-1" />Parent Message</Badge>;
       case 'announcement':
         return <Badge className="bg-blue-100 text-blue-800 border-blue-300"><Bell className="w-3 h-3 mr-1" />Announcement</Badge>;
       case 'alert':
@@ -92,6 +108,8 @@ export function NotificationArchivesPage() {
         return <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300"><Calendar className="w-3 h-3 mr-1" />Reminder</Badge>;
       case 'update':
         return <Badge className="bg-green-100 text-green-800 border-green-300"><MessageSquare className="w-3 h-3 mr-1" />Update</Badge>;
+      default:
+        return <Badge className="bg-gray-100 text-gray-800 border-gray-300"><Bell className="w-3 h-3 mr-1" />Unknown</Badge>;
     }
   };
 
@@ -113,6 +131,59 @@ export function NotificationArchivesPage() {
     if (confirm(`Are you sure you want to delete ${selectedIds.length} notification(s)?`)) {
       setSelectedIds([]);
       // In a real app, this would delete the notifications
+    }
+  };
+
+  const handleReply = (notification: any) => {
+    setReplyingTo(notification);
+    setReplyMessage('');
+    setReplyDialogOpen(true);
+  };
+
+  const handleSendReply = async () => {
+    if (!replyMessage.trim() || !replyingTo || !currentUser) {
+      toast.error('Please enter a reply message');
+      return;
+    }
+
+    try {
+      // Extract parent info from the original message
+      const originalMessage = replyingTo.originalNotification;
+      const parentInfo = originalMessage.message.split('\n')[0]; // First line should contain parent info
+      
+      // Send reply notification to the specific parent
+      await addNotification({
+        title: `Re: ${replyingTo.title}`,
+        message: `Admin Reply:\n\n${replyMessage}\n\n---\nOriginal Message:\n${replyingTo.message}`,
+        type: 'info' as any, // Using 'info' type for reply messages
+        targetAudience: 'parents', // Send to all parents (in a real app, you'd send to specific parent)
+        sentBy: currentUser.id,
+        sentDate: new Date().toISOString(),
+        isRead: false,
+        readBy: []
+      });
+
+      toast.success('Reply sent successfully!');
+      setReplyDialogOpen(false);
+      setReplyMessage('');
+      setReplyingTo(null);
+    } catch (error) {
+      toast.error('Failed to send reply. Please try again.');
+    }
+  };
+
+  // Mark notification as read when viewed
+  const handleViewNotification = async (notification: any) => {
+    setSelectedNotification(notification);
+    
+    // Mark as read if it's unread
+    if (notification.readCount === 0 && currentUser) {
+      try {
+        await markNotificationAsRead(notification.originalNotification.id);
+        toast.success('Notification marked as read');
+      } catch (error) {
+        console.error('Failed to mark notification as read:', error);
+      }
     }
   };
 
@@ -218,6 +289,7 @@ export function NotificationArchivesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
+                <SelectItem value="parent_message">Parent Message</SelectItem>
                 <SelectItem value="announcement">Announcement</SelectItem>
                 <SelectItem value="alert">Alert</SelectItem>
                 <SelectItem value="reminder">Reminder</SelectItem>
@@ -311,14 +383,27 @@ export function NotificationArchivesPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedNotification(notification)}
-                          className="text-[#0A2540] hover:text-[#FFD700] hover:bg-[#FFD700]/10 rounded-xl"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewNotification(notification)}
+                            className="text-[#0A2540] hover:text-[#FFD700] hover:bg-[#FFD700]/10 rounded-xl"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          {notification.isParentMessage && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleReply(notification)}
+                              className="text-purple-600 hover:text-purple-700 hover:bg-purple-100 rounded-xl"
+                              title="Reply to parent"
+                            >
+                              <Reply className="w-4 h-4" />
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -364,6 +449,51 @@ export function NotificationArchivesPage() {
                   {selectedNotification && Math.round((selectedNotification.readCount / selectedNotification.recipientCount) * 100)}%
                 </p>
               </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reply Dialog */}
+      <Dialog open={replyDialogOpen} onOpenChange={setReplyDialogOpen}>
+        <DialogContent className="max-w-2xl rounded-xl">
+          <DialogHeader>
+            <DialogTitle className="text-[#0A2540]">Reply to Parent Message</DialogTitle>
+            <DialogDescription>
+              Replying to: {replyingTo?.title}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-4 rounded-xl">
+              <p className="text-sm text-gray-600 mb-2">Original Message:</p>
+              <p className="text-gray-700 whitespace-pre-wrap">{replyingTo?.message}</p>
+            </div>
+            <div>
+              <Label htmlFor="reply" className="text-[#0A2540]">Your Reply *</Label>
+              <Textarea
+                id="reply"
+                value={replyMessage}
+                onChange={(e) => setReplyMessage(e.target.value)}
+                placeholder="Type your reply here..."
+                className="min-32 rounded-xl border-[#0A2540]/20 focus:border-[#FFD700]"
+                required
+              />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => setReplyDialogOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSendReply}
+                className="bg-[#FFD700] hover:bg-[#FFC700] text-[#0A2540] rounded-xl"
+              >
+                <Send className="w-4 h-4 mr-2" />
+                Send Reply
+              </Button>
             </div>
           </div>
         </DialogContent>

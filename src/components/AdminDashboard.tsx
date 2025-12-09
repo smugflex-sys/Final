@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { 
   LayoutDashboard, Users, UserPlus, GraduationCap,
   CheckCircle, Bell, Settings, FileText,
-  Link as LinkIcon, BookOpen, List, Award, BarChart3, MessageSquare, Database, DollarSign, Activity, Calendar, Clock
+  Link as LinkIcon, BookOpen, List, Award, BarChart3, MessageSquare, Database, DollarSign, Activity, Calendar, Clock, Archive
 } from "lucide-react";
 import { DashboardSidebar } from "./DashboardSidebar";
 import { DashboardTopBar } from "./DashboardTopBar";
@@ -13,6 +13,9 @@ import { RegisterUserPage } from "./admin/RegisterUserPage";
 import { ManageStudentsPage } from "./admin/ManageStudentsPage";
 import { ManageUsersPage } from "./admin/ManageUsersPage";
 import { NotificationSystemPage } from "./admin/NotificationSystemPage";
+import { NotificationArchivesPage } from "./admin/NotificationArchivesPage";
+import { ViewNotificationsPage } from "./shared/ViewNotificationsPage";
+import { Dialog, DialogContent } from "./ui/dialog";
 import { SystemSettingsPage } from "./admin/SystemSettingsPage";
 import { LinkStudentParentPage } from "./admin/LinkStudentParentPage";
 import { ManageClassesPage } from "./admin/ManageClassesPage";
@@ -22,7 +25,6 @@ import { PromotionSystemPage } from "./admin/PromotionSystemPage";
 import { ResultsManagementPage } from "./admin/ResultsManagementPage";
 import { AttendanceReportsPage } from "./admin/AttendanceReportsPage";
 import { ExamTimetablePage } from "./admin/ExamTimetablePage";
-import { NotificationsPage } from "./NotificationsPage";
 import { DataBackupPage } from "./admin/DataBackupPage";
 import { ActivityLogsPage } from "./admin/ActivityLogsPage";
 import { FeeManagementPage } from "./admin/FeeManagementPage";
@@ -55,6 +57,9 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const canViewReports = currentUser ? checkUserPermissionAPI(currentUser.role, 'view_student_reports') : false;
   const canManageSystem = currentUser ? checkUserPermissionAPI(currentUser.role, 'manage_settings') : false;
 
+  // Notification dialog state
+  const [notificationDialogOpen, setNotificationDialogOpen] = useState(false);
+
   const sidebarItems = [
     // Main Dashboard
     { icon: <LayoutDashboard className="w-5 h-5" />, label: "Dashboard", id: "dashboard", permission: null },
@@ -75,6 +80,7 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
     
     // Results Management
     { icon: <Database className="w-5 h-5" />, label: "Results Management", id: "results-management", permission: 'manage_exams' },
+    { icon: <FileText className="w-5 h-5" />, label: "Signature Settings", id: "signature-settings", permission: 'manage_settings' },
         
     // Attendance & Timetable
     { icon: <Clock className="w-5 h-5" />, label: "Attendance Reports", id: "attendance-reports", permission: 'view_reports' },
@@ -84,12 +90,10 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
     { icon: <DollarSign className="w-5 h-5" />, label: "Fee Management", id: "fee-management", permission: 'manage_fees' },
     
     // Communication & Settings
-    { icon: <MessageSquare className="w-5 h-5" />, label: "Notifications", id: "send-notifications", permission: 'manage_notifications' },
-    { icon: <Bell className="w-5 h-5" />, label: "View Notifications", id: "notifications", permission: null },
-    { icon: <FileText className="w-5 h-5" />, label: "Signature Settings", id: "signature-settings", permission: 'manage_settings' },
-    { icon: <Activity className="w-5 h-5" />, label: "Activity Logs", id: "activity-logs", permission: 'view_logs' },
+    { icon: <MessageSquare className="w-5 h-5" />, label: "Send Notifications", id: "send-notifications", permission: 'manage_notifications' },
+    { icon: <Archive className="w-5 h-5" />, label: "View Messages", id: "view-messages", permission: 'manage_notifications' },
     { icon: <Database className="w-5 h-5" />, label: "Data Backup", id: "data-backup", permission: 'manage_settings' },
-        { icon: <Settings className="w-5 h-5" />, label: "Settings", id: "settings", permission: 'manage_settings' },
+    { icon: <Settings className="w-5 h-5" />, label: "Settings", id: "settings", permission: 'manage_settings' },
   ].filter(item => !item.permission || (currentUser && checkUserPermissionAPI(currentUser.role, item.permission)));
 
   const handleItemClick = (id: string) => {
@@ -114,6 +118,7 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
           userRole="System Admin"
           notificationCount={unreadNotifications.length}
           onLogout={onLogout}
+          onNotificationClick={() => setNotificationDialogOpen(true)}
         />
 
         <main className="p-4 md:p-6 max-w-7xl mx-auto">
@@ -277,16 +282,15 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
           {activeItem === "link-student-parent" && <LinkStudentParentPage />}
           {activeItem === "fee-management" && <FeeManagementPage />}
           {activeItem === "send-notifications" && <NotificationSystemPage />}
-          {activeItem === "notifications" && <NotificationsPage />}
+          {activeItem === "view-messages" && <NotificationArchivesPage />}
           {activeItem === "activity-logs" && <ActivityLogsPage />}
           {activeItem === "data-backup" && <DataBackupPage />}
           {activeItem === "settings" && <SystemSettingsPage />}
           {activeItem === "attendance-reports" && <AttendanceReportsPage />}
           {activeItem === "exam-timetable" && <ExamTimetablePage />}
           {activeItem === "results-management" && <ResultsManagementPage />}
-                    {activeItem === "signature-settings" && <SignatureSettingsPage />}
                     
-          {!["dashboard", "register-user", "manage-students", "manage-users", "manage-classes", "manage-subjects", "teacher-assignments", "promotion-system", "link-student-parent", "fee-management", "send-notifications", "notifications", "activity-logs", "data-backup", "settings", "attendance-reports", "exam-timetable", "results-management", "signature-settings"].includes(activeItem) && (
+          {!["dashboard", "register-user", "manage-students", "manage-users", "manage-classes", "manage-subjects", "teacher-assignments", "promotion-system", "link-student-parent", "fee-management", "send-notifications", "view-messages", "activity-logs", "data-backup", "settings", "attendance-reports", "exam-timetable", "results-management"].includes(activeItem) && (
             <div className="space-y-6">
               <div className="flex items-center justify-center min-h-[400px]">
                 <Card className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical max-w-md w-full">
@@ -307,6 +311,13 @@ export function AdminDashboard({ onLogout }: AdminDashboardProps) {
           )}
         </main>
       </div>
+
+      {/* Notification Dialog */}
+      <Dialog open={notificationDialogOpen} onOpenChange={setNotificationDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <ViewNotificationsPage />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

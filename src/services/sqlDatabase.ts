@@ -2179,6 +2179,78 @@ class SQLDatabaseService {
   async deletePsychomotorDomain(id: number): Promise<void> {
     await this.deleteRecord('psychomotor_domains', id);
   }
+
+  // Exam Timetable Methods
+  async createExamTimetable(timetableData: any): Promise<any> {
+    const sqlData = {
+      class_id: timetableData.classId,
+      subject_id: timetableData.subjectId,
+      exam_type: timetableData.examType || 'Exam',
+      exam_date: timetableData.examDate,
+      start_time: timetableData.startTime,
+      end_time: timetableData.endTime,
+      duration_minutes: this.calculateDuration(timetableData.startTime, timetableData.endTime),
+      venue: timetableData.venue || null,
+      supervisor_id: timetableData.supervisorId || null,
+      academic_year: timetableData.academicYear || '',
+      term: timetableData.term || '',
+      instructions: timetableData.instructions || null,
+      created_by: timetableData.createdBy || null,
+      created_at: new Date().toISOString()
+    };
+    const timetableId = await this.insertRecord('exam_timetable', sqlData);
+    return { id: timetableId, ...timetableData };
+  }
+
+  async updateExamTimetable(id: number, timetableData: any): Promise<boolean> {
+    const sqlData = {
+      class_id: timetableData.classId,
+      subject_id: timetableData.subjectId,
+      exam_type: timetableData.examType,
+      exam_date: timetableData.examDate,
+      start_time: timetableData.startTime,
+      end_time: timetableData.endTime,
+      duration_minutes: this.calculateDuration(timetableData.startTime, timetableData.endTime),
+      venue: timetableData.venue,
+      supervisor_id: timetableData.supervisorId,
+      academic_year: timetableData.academicYear,
+      term: timetableData.term,
+      instructions: timetableData.instructions,
+      updated_at: new Date().toISOString()
+    };
+    return await this.updateRecord('exam_timetable', id, sqlData);
+  }
+
+  async deleteExamTimetable(id: number): Promise<boolean> {
+    return await this.deleteRecord('exam_timetable', id);
+  }
+
+  async getExamTimetables(): Promise<any[]> {
+    const result = await this.executeQuery('SELECT et.*, c.name as class_name, s.name as subject_name FROM exam_timetable et LEFT JOIN classes c ON et.class_id = c.id LEFT JOIN subjects s ON et.subject_id = s.id ORDER BY et.exam_date, et.start_time');
+    return result && result.data ? result.data : [];
+  }
+
+  async getExamTimetablesByClass(classId: number): Promise<any[]> {
+    const result = await this.executeQuery('SELECT et.*, c.name as class_name, s.name as subject_name FROM exam_timetable et LEFT JOIN classes c ON et.class_id = c.id LEFT JOIN subjects s ON et.subject_id = s.id WHERE et.class_id = ? ORDER BY et.exam_date, et.start_time', [classId]);
+    return result && result.data ? result.data : [];
+  }
+
+  async getExamTimetablesBySubject(subjectId: number): Promise<any[]> {
+    const result = await this.executeQuery('SELECT et.*, c.name as class_name, s.name as subject_name FROM exam_timetable et LEFT JOIN classes c ON et.class_id = c.id LEFT JOIN subjects s ON et.subject_id = s.id WHERE et.subject_id = ? ORDER BY et.exam_date, et.start_time', [subjectId]);
+    return result && result.data ? result.data : [];
+  }
+
+  async getExamTimetablesByDate(date: string): Promise<any[]> {
+    const result = await this.executeQuery('SELECT et.*, c.name as class_name, s.name as subject_name FROM exam_timetable et LEFT JOIN classes c ON et.class_id = c.id LEFT JOIN subjects s ON et.subject_id = s.id WHERE et.exam_date = ? ORDER BY et.start_time', [date]);
+    return result && result.data ? result.data : [];
+  }
+
+  private calculateDuration(startTime: string, endTime: string): number {
+    if (!startTime || !endTime) return 0;
+    const start = new Date(`2000-01-01T${startTime}`);
+    const end = new Date(`2000-01-01T${endTime}`);
+    return Math.round((end.getTime() - start.getTime()) / 60000);
+  }
 }
 
 export const sqlDatabase = new SQLDatabaseService();

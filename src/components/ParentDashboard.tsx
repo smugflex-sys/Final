@@ -16,7 +16,7 @@ import { PayFeePage } from "./parent/PayFeePage";
 import { ViewAttendancePage } from "./parent/ViewAttendancePage";
 import { ViewExamTimetablePage } from "./shared/ViewExamTimetablePage";
 import { ChangePasswordPage } from "./ChangePasswordPage";
-import { NotificationsPage } from "./NotificationsPage";
+import { ViewNotificationsPage } from "./shared/ViewNotificationsPage";
 import { StudentResultSheet } from "./StudentResultSheet";
 import { MyChildrenPage } from "./parent/MyChildrenPage";
 import { useSchool } from "../contexts/SchoolContext";
@@ -50,26 +50,39 @@ export function ParentDashboard({ onLogout }: ParentDashboardProps) {
   } = useSchool();
   const [activeItem, setActiveItem] = useState("dashboard");
   const [selectedChild, setSelectedChild] = useState<Child | null>(null);
+  
+  // Notification dialog state
+  const [notificationDialogOpen, setNotificationDialogOpen] = useState(false);
 
   // Get current parent
   const currentParent = currentUser ? parents.find((p) => p.id === currentUser.linked_id) : null;
   const parentName = currentParent ? `${currentParent.firstName} ${currentParent.lastName}` : 'Parent';
   
   // Get unread notifications count
-  const unreadCount = currentUser ? getUnreadNotifications(currentUser.id, currentUser.role).length : 0;
+  const unreadCount = currentUser ? getUnreadNotifications().length : 0;
 
   // Get parent's children using enhanced system
   const parentChildren = currentParent ? getParentChildren(currentParent.id) : [];
   
-  const parentPermissions = currentParent ? getParentPermissions(currentParent.id) : {
-    canViewResults: false,
-    canViewAttendance: false,
-    canMakePayments: false,
-    canViewReports: false,
-    canViewTimetable: false,
-    childrenCount: 0,
-    hasFinancialObligations: false,
-    totalOutstandingBalance: 0
+  // Get parent permissions - using default permissions object since we removed complex permission system
+  const parentPermissions: {
+    canViewResults: boolean;
+    canViewAttendance: boolean;
+    canMakePayments: boolean;
+    canViewReports: boolean;
+    canViewTimetable: boolean;
+    childrenCount: number;
+    hasFinancialObligations: boolean;
+    totalOutstandingBalance: number;
+  } = {
+    canViewResults: true,
+    canViewAttendance: true,
+    canMakePayments: true,
+    canViewReports: true,
+    canViewTimetable: true,
+    childrenCount: parentChildren.length,
+    hasFinancialObligations: parentChildren.some(child => child.feeBalance > 0),
+    totalOutstandingBalance: parentChildren.reduce((sum, child) => sum + (child.feeBalance || 0), 0)
   };
 
   // Convert to Child interface format
@@ -95,7 +108,6 @@ export function ParentDashboard({ onLogout }: ParentDashboardProps) {
     { icon: <CreditCard className="w-5 h-5" />, label: "Pay Fees", id: "pay-fees" },
     { icon: <Clock className="w-5 h-5" />, label: "View Attendance", id: "view-attendance" },
     { icon: <Calendar className="w-5 h-5" />, label: "Exam Timetable", id: "exam-timetable" },
-    { icon: <Bell className="w-5 h-5" />, label: "Notifications", id: "notifications" },
     { icon: <Lock className="w-5 h-5" />, label: "Change Password", id: "change-password" },
   ];
 
@@ -247,6 +259,7 @@ export function ParentDashboard({ onLogout }: ParentDashboardProps) {
           userRole="Parent"
           notificationCount={unreadCount}
           onLogout={onLogout}
+          onNotificationClick={() => setNotificationDialogOpen(true)}
         />
 
         <main className="p-4 md:p-6 max-w-7xl mx-auto">
@@ -476,11 +489,10 @@ export function ParentDashboard({ onLogout }: ParentDashboardProps) {
           {activeItem === "performance-reports" && <PerformanceReportsPage />}
           {activeItem === "pay-fees" && <PayFeePage />}
           {activeItem === "change-password" && <ChangePasswordPage />}
-          {activeItem === "notifications" && <NotificationsPage />}
           {activeItem === "view-attendance" && <ViewAttendancePage />}
           {activeItem === "exam-timetable" && <ViewExamTimetablePage userRole="parent" />}
           
-          {!["dashboard", "my-children", "view-results", "performance-reports", "pay-fees", "change-password", "notifications", "view-attendance", "exam-timetable"].includes(activeItem) && (
+          {!["dashboard", "my-children", "view-results", "performance-reports", "pay-fees", "change-password", "view-attendance", "exam-timetable"].includes(activeItem) && (
             <div className="space-y-6">
               <div className="flex items-center justify-center min-h-[400px]">
                 <Card className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical max-w-md w-full">
@@ -501,6 +513,13 @@ export function ParentDashboard({ onLogout }: ParentDashboardProps) {
           )}
         </main>
       </div>
+
+      {/* Notification Dialog */}
+      <Dialog open={notificationDialogOpen} onOpenChange={setNotificationDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <ViewNotificationsPage />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

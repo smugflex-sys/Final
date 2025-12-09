@@ -31,39 +31,7 @@ export function StudentResultCard({
   onApprovePrint,
   currentUser
 }: StudentResultCardProps) {
-  const [signatureSettings, setSignatureSettings] = useState<any>(null);
-
-  useEffect(() => {
-    loadSignatureSettings();
-  }, [result]);
-
-  const loadSignatureSettings = async () => {
-    try {
-      const response = await fetch('http://localhost/GGGG/api/database/query', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: JSON.stringify({
-          query: `
-            SELECT * FROM signature_settings 
-            WHERE academic_year = ? AND term = ? 
-            ORDER BY created_at DESC 
-            LIMIT 1
-          `,
-          params: [result.academic_year || '2024/2025', result.term || 'Third Term']
-        })
-      });
-
-      const resultData = await response.json();
-      if (resultData.success && resultData.data && resultData.data.length > 0) {
-        setSignatureSettings(resultData.data[0]);
-      }
-    } catch (error) {
-      console.error('Error loading signature settings:', error);
-    }
-  };
+  const { schoolSettings } = useSchool();
   const { students, classes, teachers, scores, subjectAssignments, subjects, loadScoresFromAPI, loadSubjectAssignmentsFromAPI, loadSubjectsFromAPI } = useSchool();
   const [showDetails, setShowDetails] = useState(false);
   const [detailedScoresData, setDetailedScoresData] = useState<any[]>([]);
@@ -93,17 +61,36 @@ export function StudentResultCard({
         score.term === result.term
       );
 
-      // Enhance scores with subject information
+      // Enhance scores with subject information and calculate class statistics
       studentScores = studentScores.map(score => {
         const subjectAssignment = subjectAssignments.find(sa => sa.id === score.subject_assignment_id);
         const subject = subjectAssignment ? subjects.find(s => s.id === subjectAssignment.subject_id) : null;
-        
+        const teacher = subjectAssignment ? teachers.find(t => t.id === subjectAssignment.teacher_id) : null;
+
+        // Calculate class statistics for this subject
+        const classScores = scores.filter(s => {
+          const assignment = subjectAssignments.find(sa => sa.id === s.subject_assignment_id);
+          return assignment && 
+                 assignment.subject_id === subjectAssignment?.subject_id &&
+                 s.academic_year === result.academic_year &&
+                 s.term === result.term &&
+                 s.total > 0;
+        });
+
+        const validScores = classScores.map(cs => cs.total || 0);
+        const classAverage = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0;
+        const classMinimum = validScores.length > 0 ? Math.min(...validScores) : 0;
+        const classMaximum = validScores.length > 0 ? Math.max(...validScores) : 0;
+
         return {
           ...score,
           subject_name: subject ? subject.name : score.subject_name || 'Unknown Subject',
-          subject_teacher: subjectAssignment ? subjectAssignment.teacher_name || 'Teacher' : 'Teacher'
+          subject_teacher: teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Not Assigned',
+          class_average: parseFloat(classAverage.toFixed(2)),
+          class_minimum: classMinimum,
+          class_maximum: classMaximum
         };
-      });
+      }).sort((a, b) => a.subject_name.localeCompare(b.subject_name));
 
       // If we have detailedScores in props, use them, otherwise use result.scores or filtered scores
       if (propDetailedScores && propDetailedScores.length > 0) {
@@ -113,13 +100,32 @@ export function StudentResultCard({
         const enhancedResultScores = result.scores.map((score: any) => {
           const subjectAssignment = subjectAssignments.find(sa => sa.id === score.subject_assignment_id);
           const subject = subjectAssignment ? subjects.find(s => s.id === subjectAssignment.subject_id) : null;
+          const teacher = subjectAssignment ? teachers.find(t => t.id === subjectAssignment.teacher_id) : null;
+
+          // Calculate class statistics for this subject
+          const classScores = scores.filter(s => {
+            const assignment = subjectAssignments.find(sa => sa.id === s.subject_assignment_id);
+            return assignment && 
+                   assignment.subject_id === subjectAssignment?.subject_id &&
+                   s.academic_year === result.academic_year &&
+                   s.term === result.term &&
+                   s.total > 0;
+          });
+
+          const validScores = classScores.map(cs => cs.total || 0);
+          const classAverage = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0;
+          const classMinimum = validScores.length > 0 ? Math.min(...validScores) : 0;
+          const classMaximum = validScores.length > 0 ? Math.max(...validScores) : 0;
           
           return {
             ...score,
             subject_name: subject ? subject.name : score.subject_name || 'Unknown Subject',
-            subject_teacher: subjectAssignment ? subjectAssignment.teacher_name || 'Teacher' : 'Teacher'
+            subject_teacher: teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Not Assigned',
+            class_average: parseFloat(classAverage.toFixed(2)),
+            class_minimum: classMinimum,
+            class_maximum: classMaximum
           };
-        });
+        }).sort((a, b) => a.subject_name.localeCompare(b.subject_name));
         setDetailedScoresData(enhancedResultScores);
       } else {
         setDetailedScoresData(studentScores);
@@ -313,9 +319,9 @@ export function StudentResultCard({
         <div style={{ marginBottom: '0.5mm' }}>
           <img src={schoolLogo} alt="School Logo" style={{ width: '12mm', height: '12mm', display: 'block', margin: '0 auto' }} />
         </div>
-        <h1 style={{ fontSize: '11pt', fontWeight: 'bold', margin: '0.5mm 0', textTransform: 'uppercase' }}>GRACELAND ROYAL ACADEMY</h1>
-        <p style={{ fontSize: '6pt', margin: '0.3mm 0', fontStyle: 'italic' }}>BEHIND HAKIMI PALACE OPPOSITE NNPC DEPOT TUNFUFE, GOMBE</p>
-        <p style={{ fontSize: '6pt', margin: '0.3mm 0' }}>gracelandroyalacademy09@gmail.com</p>
+        <h1 style={{ fontSize: '11pt', fontWeight: 'bold', margin: '0.5mm 0', textTransform: 'uppercase' }}>{schoolSettings.school_name || 'GRACELAND ROYAL ACADEMY'}</h1>
+        <p style={{ fontSize: '6pt', margin: '0.3mm 0', fontStyle: 'italic' }}>{schoolSettings.school_address || 'BEHIND HAKIMI PALACE OPPOSITE NNPC DEPOT TUNFUFE, GOMBE'}</p>
+        <p style={{ fontSize: '6pt', margin: '0.3mm 0' }}>{schoolSettings.school_email || 'gracelandroyalacademy09@gmail.com'}</p>
       </div>
 
       <hr className="border border-black" />
@@ -351,7 +357,7 @@ export function StudentResultCard({
                 <td className="border border-black" style={{ padding: '0.8mm', fontWeight: 'bold', fontSize: '6pt' }}>CLASS:</td>
                 <td className="border border-black" style={{ padding: '0.8mm', fontSize: '6pt' }}>{studentClassData?.name || 'CLASS NAME'}</td>
                 <td className="border border-black" style={{ padding: '0.8mm', fontWeight: 'bold', fontSize: '6pt' }}>NEXT TERM:</td>
-                <td className="border border-black" style={{ padding: '0.8mm', fontSize: '6pt' }}>{signatureSettings?.resumption_date || '15-SEP-2025'}</td>
+                <td className="border border-black" style={{ padding: '0.8mm', fontSize: '6pt' }}>{schoolSettings?.resumption_date || '_________________'}</td>
               </tr>
             </tbody>
           </table>
@@ -459,20 +465,20 @@ export function StudentResultCard({
           <p style={{ margin: '0.5mm 0', fontSize: '6pt' }}>
             <b>{studentClassData?.category === 'Primary' ? 'HEAD TEACHER:' : 'PRINCIPAL:'}</b> 
             {studentClassData?.category === 'Primary' 
-              ? ` ${signatureSettings?.head_teacher_name || 'MRS. ABDULHAMID BINTA'}`
-              : ` ${signatureSettings?.principal_name || 'OROGUN GLORY EJIRO'}`
+              ? ` ${schoolSettings?.head_teacher_name || '_________________'}`
+              : ` ${schoolSettings?.principal_name || '_________________'}`
             }
           </p>
           <div style={{ margin: '0.5mm 0', fontSize: '6pt', display: 'flex', alignItems: 'center' }}>
             <b style={{ marginRight: '2mm' }}>SIGNATURE:</b>
             {studentClassData?.category === 'Primary' 
-              ? (signatureSettings?.head_teacher_signature ? (
-                  <img src={signatureSettings.head_teacher_signature} alt="Head Teacher Signature" style={{ height: '8mm', maxHeight: '8mm' }} />
+              ? (schoolSettings?.head_teacher_signature ? (
+                  <img src={schoolSettings.head_teacher_signature} alt="Head Teacher Signature" style={{ height: '8mm', maxHeight: '8mm' }} />
                 ) : (
                   <span>______________________</span>
                 ))
-              : (signatureSettings?.principal_signature ? (
-                  <img src={signatureSettings.principal_signature} alt="Principal Signature" style={{ height: '8mm', maxHeight: '8mm' }} />
+              : (schoolSettings?.principal_signature ? (
+                  <img src={schoolSettings.principal_signature} alt="Principal Signature" style={{ height: '8mm', maxHeight: '8mm' }} />
                 ) : (
                   <span>______________________</span>
                 ))

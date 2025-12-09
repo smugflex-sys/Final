@@ -13,7 +13,8 @@ import { MessageParentsPage } from "./teacher/MessageParentsPage";
 import { ScoreApprovalPage } from "./teacher/ScoreApprovalPage";
 import { ViewExamTimetablePage } from "./shared/ViewExamTimetablePage";
 import { ChangePasswordPage } from "./ChangePasswordPage";
-import { NotificationsPage } from "./NotificationsPage";
+import { ViewNotificationsPage } from "./shared/ViewNotificationsPage";
+import { Dialog, DialogContent } from "./ui/dialog";
 import { useSchool } from "../contexts/SchoolContext";
 import { useNotificationListener } from "../contexts/NotificationService";
 
@@ -24,6 +25,9 @@ interface TeacherDashboardProps {
 export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   const { currentUser, teachers, getTeacherAssignments, getTeacherClasses, getTeacherResponsibilities, getUnreadNotifications, getActivityLogs } = useSchool();
   const [activeItem, setActiveItem] = useState("dashboard");
+  
+  // Notification dialog state
+  const [notificationDialogOpen, setNotificationDialogOpen] = useState(false);
   
   // Real-time notification listener for teachers
   useNotificationListener(currentUser?.role, currentUser?.id);
@@ -58,7 +62,6 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
     { icon: <FileSpreadsheet className="w-5 h-5" />, label: "Compile Results", id: "compile-results", classTeacherOnly: true },
     { icon: <CheckCircle className="w-5 h-5" />, label: "Approve Scores", id: "approve-scores", classTeacherOnly: true },
     { icon: <MessageSquare className="w-5 h-5" />, label: "Message Parents", id: "message-parents" },
-    { icon: <Bell className="w-5 h-5" />, label: "Notifications", id: "notifications" },
     { icon: <Lock className="w-5 h-5" />, label: "Change Password", id: "change-password" },
     { icon: <Calendar className="w-5 h-5" />, label: "Exam Timetable", id: "exam-timetable" },
     { icon: <Clock className="w-5 h-5" />, label: "Mark Attendance", id: "mark-attendance" },
@@ -87,6 +90,7 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
           userRole={isClassTeacher ? "Class Teacher" : "Subject Teacher"}
           notificationCount={unreadNotifications.length}
           onLogout={onLogout}
+          onNotificationClick={() => setNotificationDialogOpen(true)}
         />
 
         <main className="p-4 md:p-6 max-w-7xl mx-auto">
@@ -230,12 +234,11 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
           {activeItem === "compile-results" && <CompileResultsPage />}
           {activeItem === "approve-scores" && <ScoreApprovalPage />}
           {activeItem === "message-parents" && <MessageParentsPage />}
-          {activeItem === "notifications" && <NotificationsPage />}
           {activeItem === "change-password" && <ChangePasswordPage />}
-          {activeItem === "mark-attendance" && <MarkAttendancePage />}
           {activeItem === "exam-timetable" && <ViewExamTimetablePage userRole="teacher" />}
+          {activeItem === "mark-attendance" && <MarkAttendancePage />}
           
-          {!["dashboard", "class-list", "enter-scores", "compile-results", "approve-scores", "message-parents", "notifications", "change-password", "mark-attendance", "exam-timetable"].includes(activeItem) && (
+          {!["dashboard", "class-list", "enter-scores", "compile-results", "approve-scores", "message-parents", "change-password", "mark-attendance", "exam-timetable"].includes(activeItem) && (
             <div className="space-y-6">
               <div className="flex items-center justify-center min-h-[400px]">
                 <Card className="rounded-lg bg-white border border-[#E5E7EB] shadow-clinical max-w-md w-full">
@@ -256,6 +259,13 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
           )}
         </main>
       </div>
+
+      {/* Notification Dialog */}
+      <Dialog open={notificationDialogOpen} onOpenChange={setNotificationDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <ViewNotificationsPage />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -7,9 +7,10 @@ interface DashboardTopBarProps {
   userRole: string;
   notificationCount?: number;
   onLogout?: () => void;
+  onNotificationClick?: () => void;
 }
 
-export function DashboardTopBar({ userName, userRole, notificationCount = 0, onLogout }: DashboardTopBarProps) {
+export function DashboardTopBar({ userName, userRole, notificationCount = 0, onLogout, onNotificationClick }: DashboardTopBarProps) {
   return (
     <header className="sticky top-0 z-20 bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] border-b border-[#1E40AF]/50 shadow-lg backdrop-blur-sm">
       <div className="flex items-center justify-between px-4 md:px-6 py-4">
@@ -35,7 +36,7 @@ export function DashboardTopBar({ userName, userRole, notificationCount = 0, onL
         {/* Right Side */}
         <div className="flex items-center gap-3">
           {/* Notifications */}
-          <div className="relative cursor-pointer group">
+          <div className="relative cursor-pointer group" onClick={onNotificationClick}>
             <div className="w-10 h-10 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-sm flex items-center justify-center transition-all shadow-sm ring-1 ring-white/10 hover:ring-white/20">
               <Bell className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
             </div>

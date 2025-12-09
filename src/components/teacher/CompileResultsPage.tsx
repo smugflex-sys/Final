@@ -1,12 +1,15 @@
  import { useState, useMemo, useCallback, useEffect } from "react";
-import { FileText, Send, Eye, Download, AlertCircle, CheckCircle, Edit, BookOpen, Users, ChevronLeft, Award, RefreshCw, ArrowLeft } from "lucide-react";
+import { FileText, Send, Eye, Download, AlertCircle, CheckCircle, Edit, BookOpen, Users, ChevronLeft, Award, RefreshCw, ArrowLeft, XCircle, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Badge } from "../ui/badge";
 import { Avatar, AvatarFallback } from "../ui/avatar";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Alert, AlertDescription } from "../ui/alert";
 import { useSchool } from "../../contexts/SchoolContext";
 import { toast } from "sonner";
 
@@ -308,16 +311,22 @@ export function CompileResultsPage() {
     currentAcademicYear,
     subjectAssignments,
     subjectRegistrations,
+    attendances,
     loadScoresFromAPI,
     loadAffectiveDomainsFromAPI,
     loadPsychomotorDomainsFromAPI,
+    loadAttendancesFromAPI,
+    loadCompiledResultsFromAPI,
     refreshClassData,
     canViewResults,
     canManageScores,
     updateAffectiveDomain,
     updatePsychomotorDomain,
     createAffectiveDomain,
-    createPsychomotorDomain
+    createPsychomotorDomain,
+    getAttendanceByStudent,
+    getAttendanceRequirements,
+    addNotification
   } = useSchool();
 
   const [selectedClassId, setSelectedClassId] = useState<string>("");
@@ -328,7 +337,8 @@ export function CompileResultsPage() {
   const [commentOptions, setCommentOptions] = useState<string[]>([]);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [resultsGenerated, setResultsGenerated] = useState<boolean>(false);
-  
+  const [studentAttendanceInput, setStudentAttendanceInput] = useState<Record<number, number>>({});
+    
   // Affective and Psychomotor form states
   const [affectiveData, setAffectiveData] = useState({
     attentiveness: 3,
@@ -420,6 +430,12 @@ export function CompileResultsPage() {
       // Always load scores to get the latest submitted scores
       await loadScoresFromAPI();
       
+      // Load attendance data
+      await loadAttendancesFromAPI();
+      
+      // Load compiled results to get latest rejection status
+      await loadCompiledResultsFromAPI();
+      
       if (selectedClassId) {
         await refreshClassData(Number(selectedClassId));
       }
@@ -430,8 +446,49 @@ export function CompileResultsPage() {
       console.error('Error refreshing data:', error);
       toast.error('Failed to refresh data');
     }
-  }, [selectedClassId, refreshClassData, loadScoresFromAPI]);
+  }, [selectedClassId, refreshClassData, loadScoresFromAPI, loadAttendancesFromAPI, loadCompiledResultsFromAPI]);
 
+  // Auto-refresh compiled results to check for admin rejections
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        await loadCompiledResultsFromAPI();
+      } catch (error) {
+        console.error('Error auto-refreshing compiled results:', error);
+      }
+    }, 30000); // Check every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [loadCompiledResultsFromAPI]);
+
+  // Refresh when window gains focus (in case admin rejected in another tab)
+  useEffect(() => {
+    const handleFocus = async () => {
+      try {
+        await loadCompiledResultsFromAPI();
+      } catch (error) {
+        console.error('Error refreshing on focus:', error);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [loadCompiledResultsFromAPI]);
+
+  // Manual refresh function for testing
+  const handleManualRefresh = async () => {
+    try {
+      toast.info('Refreshing data...');
+      await loadCompiledResultsFromAPI();
+      await loadScoresFromAPI();
+      toast.success('Data refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+      toast.error('Failed to refresh data');
+    }
+  };
+
+  
   // Generate Results function
   const handleGenerateResults = async () => {
     try {
@@ -445,11 +502,6 @@ export function CompileResultsPage() {
       console.error('Error generating results:', error);
       toast.error('Failed to generate results. Please try again.');
     }
-  };
-
-  // Manual refresh button for users
-  const handleManualRefresh = () => {
-    refreshData();
   };
 
   // Auto-refresh when component mounts (only once per class change)
@@ -543,6 +595,46 @@ export function CompileResultsPage() {
     return classStudents.find(s => s.id === selectedStudentId);
   }, [selectedStudentId, classStudents]);
 
+  // Calculate attendance data for selected student
+  const studentAttendance = useMemo(() => {
+    if (!selectedStudent || !selectedClassId) return null;
+    
+    // First check if there's an existing compiled result with attendance data
+    const existingResult = compiledResults.find(cr => 
+      cr.student_id === selectedStudent.id &&
+      cr.class_id === Number(selectedClassId) &&
+      cr.term === currentTerm &&
+      cr.academic_year === currentAcademicYear
+    );
+    
+    if (existingResult) {
+      // Use attendance data from compiled result
+      const requiredDays = existingResult.total_attendance_days || getAttendanceRequirements()[currentTerm] || 60;
+      const attendedDays = existingResult.times_present || 0;
+      
+      return {
+        requiredDays,
+        attendedDays,
+        attendanceRate: requiredDays > 0 ? (attendedDays / requiredDays) * 100 : 0,
+        ratio: `${attendedDays}/${requiredDays}`,
+        timesAbsent: existingResult.times_absent || 0
+      };
+    }
+    
+    // Fallback to input-based calculation for new results
+    const attendanceRequirements = getAttendanceRequirements();
+    const requiredDays = attendanceRequirements[currentTerm] || 60;
+    const attendedDays = studentAttendanceInput[selectedStudent.id] || 0;
+    
+    return {
+      requiredDays,
+      attendedDays,
+      attendanceRate: requiredDays > 0 ? (attendedDays / requiredDays) * 100 : 0,
+      ratio: `${attendedDays}/${requiredDays}`,
+      timesAbsent: 0
+    };
+  }, [selectedStudent, selectedClassId, currentTerm, currentAcademicYear, compiledResults, studentAttendanceInput, getAttendanceRequirements]);
+
   // Reset affective and psychomotor data when student changes
   useEffect(() => {
     if (selectedStudent && selectedClassId) {
@@ -611,8 +703,23 @@ export function CompileResultsPage() {
           music_remark: ''
         });
       }
+      
+      // Load existing attendance data from compiled result
+      const existingResult = compiledResults.find(cr => 
+        cr.student_id === selectedStudent.id &&
+        cr.class_id === Number(selectedClassId) &&
+        cr.term === currentTerm &&
+        cr.academic_year === currentAcademicYear
+      );
+      
+      if (existingResult) {
+        setStudentAttendanceInput(prev => ({
+          ...prev,
+          [selectedStudent.id]: existingResult.times_present || 0
+        }));
+      }
     }
-  }, [selectedStudent?.id, selectedClassId, affectiveDomains, psychomotorDomains, currentTerm, currentAcademicYear]);
+  }, [selectedStudent?.id, selectedClassId, affectiveDomains, psychomotorDomains, compiledResults, currentTerm, currentAcademicYear]);
 
   // Calculate all students' completion status and positions
   const studentsCompletion = useMemo(() => {
@@ -673,6 +780,7 @@ export function CompileResultsPage() {
       const hasAffective = affective !== undefined;
       const hasPsychomotor = psychomotor !== undefined;
       const isSubmitted = existingResult?.status === 'Submitted' || existingResult?.status === 'Approved';
+      const isRejected = existingResult?.status === 'Rejected';
 
       // Calculate total score from relevant scores
       const totalScore = relevantScores.reduce((sum, s) => {
@@ -766,6 +874,18 @@ export function CompileResultsPage() {
            cr.academic_year === currentAcademicYear
     );
 
+    const isSubmitted = existingResult?.status === 'Submitted' || existingResult?.status === 'Approved';
+    const isRejected = existingResult?.status === 'Rejected';
+
+    // Debug logging
+    console.log('Student Result Debug:', {
+      studentId: selectedStudent?.id,
+      existingResult,
+      isSubmitted,
+      isRejected,
+      status: existingResult?.status
+    });
+
     // Calculate totals using same logic as studentsCompletion
     const totalScoreRaw = relevantScores.reduce((sum, s) => sum + (Number(s.total) || 0), 0);
     const totalScore = totalScoreRaw > 0 ? parseFloat(totalScoreRaw.toPrecision(3)) : 0;
@@ -797,7 +917,9 @@ export function CompileResultsPage() {
       subjectsCompleted: relevantScores.filter(s => s.status === 'Submitted').length,
       totalSubjects: (classSubjects || []).length,
       isComplete,
-      existingResult
+      existingResult,
+      isSubmitted,
+      isRejected
     };
   }, [selectedStudent, scores, classSubjects, affectiveDomains, psychomotorDomains, compiledResults, selectedClassId, currentTerm, currentAcademicYear, studentsCompletion]);
 
@@ -871,9 +993,9 @@ export function CompileResultsPage() {
       class_average: classStatistics.classAverage,
       position: position,
       total_students: totalStudents,
-      times_present: 0,
-      times_absent: 0,
-      total_attendance_days: 0,
+      times_present: studentAttendance?.attendedDays || 0,
+      times_absent: studentAttendance?.timesAbsent || 0,
+      total_attendance_days: studentAttendance?.requiredDays || getAttendanceRequirements()[currentTerm] || 60,
       term_begin: '',
       term_end: '',
       next_term_begin: '',
@@ -987,9 +1109,9 @@ export function CompileResultsPage() {
         class_average: classAverage,
         position: position,
         total_students: classStudents.length,
-        times_present: 0,
-        times_absent: 0,
-        total_attendance_days: 0,
+        times_present: studentAttendanceInput[student.id] || 0,
+        times_absent: 0, // Will be calculated as required - present
+        total_attendance_days: getAttendanceRequirements()[currentTerm] || 60,
         term_begin: '',
         term_end: '',
         next_term_begin: '',
@@ -1035,12 +1157,12 @@ export function CompileResultsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-[#0A2540] mb-2">Compile Results</h1>
-          <p className="text-gray-600">
+    <div className="p-4 space-y-4">
+      {/* Header - Compact */}
+      <div className="flex justify-between items-start flex-wrap gap-2">
+        <div className="flex-1 min-w-[200px]">
+          <h1 className="text-[#0A2540] text-lg mb-1">Compile Results</h1>
+          <p className="text-gray-600 text-sm">
             {selectedStudentId 
               ? "Review and compile student result" 
               : "Select a class to view students and compile their results"}
@@ -1051,35 +1173,39 @@ export function CompileResultsPage() {
             </p>
           )}
         </div>
-        <Button
-          onClick={handleManualRefresh}
-          variant="outline"
-          className="flex items-center gap-2 border-[#0A2540]/20"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Refresh
-        </Button>
-        <Button
-          onClick={handleGenerateResults}
-          className="bg-[#F59E0B] hover:bg-[#D97706] text-white rounded-xl flex items-center gap-2"
-        >
-          <Award className="h-4 w-4" />
-          Generate Results
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={handleManualRefresh}
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-1 border-[#0A2540]/20 h-8"
+          >
+            <RefreshCw className="h-3 w-3" />
+            Refresh
+          </Button>
+          <Button
+            onClick={handleGenerateResults}
+            size="sm"
+            className="bg-[#F59E0B] hover:bg-[#D97706] text-white rounded-lg flex items-center gap-1 h-8"
+          >
+            <Award className="h-3 w-3" />
+            Generate
+          </Button>
+        </div>
       </div>
 
-      {/* Class Selection */}
+      {/* Class Selection - Compact */}
       {!selectedStudentId && (
-        <Card className="border-[#0A2540]/10">
-          <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl">
-            <CardTitle>Select Class</CardTitle>
+        <Card className="border-[#0A2540]/10 shadow-sm">
+          <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl px-4 py-3">
+            <CardTitle className="text-base">Select Class</CardTitle>
           </CardHeader>
-          <CardContent className="p-6">
-            <div className="grid md:grid-cols-2 gap-4">
+          <CardContent className="p-4">
+            <div className="grid md:grid-cols-2 gap-3">
               <div>
-                <Label className="text-[#0A2540] mb-2 block">Class</Label>
+                <Label className="text-[#0A2540] mb-1 block text-sm">Class</Label>
                 <Select value={selectedClassId} onValueChange={setSelectedClassId}>
-                  <SelectTrigger className="h-12 rounded-xl border-[#0A2540]/20">
+                  <SelectTrigger className="h-9 rounded-lg border-[#0A2540]/20">
                     <SelectValue placeholder="Select class" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1093,16 +1219,16 @@ export function CompileResultsPage() {
               </div>
 
               <div>
-                <Label className="text-[#0A2540] mb-2 block">Term & Year</Label>
-                <div className="h-12 flex items-center px-4 rounded-xl border border-[#0A2540]/20 bg-gray-50">
-                  <p className="text-[#0A2540]">{currentTerm} {currentAcademicYear}</p>
+                <Label className="text-[#0A2540] mb-1 block text-sm">Term & Year</Label>
+                <div className="h-9 flex items-center px-3 rounded-lg border border-[#0A2540]/20 bg-gray-50">
+                  <p className="text-[#0A2540] text-sm">{currentTerm} {currentAcademicYear}</p>
                 </div>
               </div>
             </div>
 
             {selectedClassId && classSubjects.length > 0 && (
-              <div className="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-200">
-                <p className="text-sm text-blue-900">
+              <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-xs text-blue-900">
                   <strong>{classSubjects.length} subjects</strong> assigned to this class for {currentTerm} {currentAcademicYear}
                 </p>
               </div>
@@ -1111,14 +1237,14 @@ export function CompileResultsPage() {
         </Card>
       )}
 
-      {/* Student List */}
+      {/* Student List - Compact */}
       {!selectedStudentId && selectedClassId && (
-        <Card className="border-[#0A2540]/10">
-          <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl">
+        <Card className="border-[#0A2540]/10 shadow-sm">
+          <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl px-4 py-3">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-bold">Students List</h2>
-                <p className="text-blue-100">
+                <h2 className="text-lg font-bold">Students List</h2>
+                <p className="text-blue-100 text-sm">
                   {classStudents.length} students in class
                 </p>
               </div>
@@ -1126,22 +1252,22 @@ export function CompileResultsPage() {
                 <Button
                   onClick={handleSubmitAllResults}
                   disabled={(studentsCompletion || []).filter(s => s.isComplete && !s.isSubmitted).length === 0}
-                  className="bg-white text-[#10B981] hover:bg-gray-100 rounded-xl"
+                  className="bg-white text-[#10B981] hover:bg-gray-100 rounded-lg h-8 text-sm"
                 >
-                  <Send className="w-4 h-4 mr-2" />
+                  <Send className="w-3 h-3 mr-1" />
                   Submit All
                 </Button>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="p-4">
+          <CardContent className="p-3">
             {classStudents.length === 0 ? (
-              <div className="text-center py-12">
-                <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                <p className="text-gray-500">No students in this class</p>
+              <div className="text-center py-8">
+                <AlertCircle className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No students in this class</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {classStudents.map((student) => {
                   const completion = studentsCompletion.find(s => s.studentId === student.id);
                   // Don't hide students without completion data - show them with default values
@@ -1149,12 +1275,12 @@ export function CompileResultsPage() {
                   return (
                     <div
                       key={student.id}
-                      className="p-3 border border-[#0A2540]/10 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer"
+                      className="p-2 border border-[#0A2540]/10 rounded hover:border-blue-400 hover:bg-blue-50 transition-all cursor-pointer"
                       onClick={() => setSelectedStudentId(student.id)}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="w-10 h-10 border-2 border-[#3B82F6]">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="w-8 h-8 border border-[#3B82F6]">
                             {student.photo_url ? (
                               <img 
                                 src={student.photo_url} 
@@ -1167,7 +1293,7 @@ export function CompileResultsPage() {
                                 }}
                               />
                             ) : null}
-                            <AvatarFallback className="bg-[#3B82F6] text-white text-sm">
+                            <AvatarFallback className="bg-[#3B82F6] text-white text-xs">
                               {student.firstName[0]}{student.lastName[0]}
                             </AvatarFallback>
                           </Avatar>
@@ -1180,14 +1306,14 @@ export function CompileResultsPage() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
                           {/* Scores Progress */}
                           <div className="text-right">
                             <p className="text-xs text-gray-600">Scores</p>
                             <div className="flex items-center gap-1">
                               <Badge 
                                 variant={completion?.completedSubjects === completion?.totalSubjects ? "default" : "outline"}
-                                className={`rounded-lg text-xs ${
+                                className={`rounded text-xs ${
                                   completion?.completedSubjects === completion?.totalSubjects 
                                     ? 'bg-green-100 text-green-800 border-green-300' 
                                     : 'bg-yellow-100 text-yellow-800 border-yellow-300'
@@ -1200,31 +1326,20 @@ export function CompileResultsPage() {
 
                           {/* Affective */}
                           <div className="text-center">
-                            <p className="text-xs text-gray-600 mb-1">Affective</p>
-                            {completion?.hasAffective ? (
-                              <CheckCircle className="w-4 h-4 text-green-600" />
-                            ) : (
-                              <AlertCircle className="w-4 h-4 text-yellow-600" />
-                            )}
+                            <CheckCircle className={`w-3 h-3 ${completion?.hasAffective ? 'text-green-600' : 'text-gray-300'}`} />
                           </div>
 
                           {/* Psychomotor */}
                           <div className="text-center">
-                            <p className="text-xs text-gray-600 mb-1">Psy.</p>
-                            {completion?.hasPsychomotor ? (
-                              <CheckCircle className="w-4 h-4 text-green-600" />
-                            ) : (
-                              <AlertCircle className="w-4 h-4 text-yellow-600" />
-                            )}
+                            <CheckCircle className={`w-3 h-3 ${completion?.hasPsychomotor ? 'text-green-600' : 'text-gray-300'}`} />
                           </div>
 
                           {/* Status */}
                           <div className="text-center">
-                            <p className="text-xs text-gray-600 mb-1">Status</p>
                             {completion?.isSubmitted ? (
                               <Badge className="bg-green-100 text-green-800 border-green-300 text-xs">
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Submitted
+                                <CheckCircle className="w-2 h-2 mr-1" />
+                                Sub
                               </Badge>
                             ) : completion?.isComplete ? (
                               <Badge className="bg-blue-100 text-blue-800 border-blue-300 text-xs">
@@ -1249,25 +1364,26 @@ export function CompileResultsPage() {
 
       {/* Selected Student Detail View */}
       {selectedStudentId && selectedStudent && studentResultData && (
-        <div className="space-y-6">
-          {/* Back Button */}
+        <div className="space-y-4">
+          {/* Back Button - Compact */}
           <Button
             onClick={() => {
               setSelectedStudentId(null);
               setClassTeacherComment("");
             }}
             variant="outline"
-            className="rounded-xl border-[#0A2540]/20"
+            size="sm"
+            className="rounded-lg border-[#0A2540]/20 h-8"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Student List
+            <ArrowLeft className="w-3 h-3 mr-1" />
+            Back
           </Button>
 
-          {/* Student Info Card */}
-          <Card className="border-[#0A2540]/10">
-            <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl py-4">
-              <CardTitle className="flex items-center gap-3 text-lg">
-                <Avatar className="w-10 h-10 border-2 border-white">
+          {/* Student Info Card - Compact */}
+          <Card className="border-[#0A2540]/10 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] text-white rounded-t-xl px-4 py-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Avatar className="w-8 h-8 border border-white">
                   {selectedStudent.photo_url ? (
                     <img 
                       src={selectedStudent.photo_url} 
@@ -1280,137 +1396,140 @@ export function CompileResultsPage() {
                       }}
                     />
                   ) : null}
-                  <AvatarFallback className="bg-white text-[#3B82F6] text-sm">
+                  <AvatarFallback className="bg-white text-[#3B82F6] text-xs">
                     {selectedStudent.firstName[0]}{selectedStudent.lastName[0]}
                   </AvatarFallback>
                 </Avatar>
                 <div>
-                  <p className="text-lg">{selectedStudent.firstName} {selectedStudent.lastName}</p>
-                  <p className="text-sm font-normal opacity-90">{selectedStudent.admissionNumber}</p>
+                  <p className="text-base">{selectedStudent.firstName} {selectedStudent.lastName}</p>
+                  <p className="text-xs font-normal opacity-90">{selectedStudent.admissionNumber}</p>
                 </div>
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-4">
-              <div className="grid md:grid-cols-4 gap-4">
+            <CardContent className="p-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Class</p>
-                  <p className="text-[#0A2540] font-medium">{selectedStudent.className}</p>
+                  <p className="text-xs text-gray-600 mb-1">Class</p>
+                  <p className="text-[#0A2540] font-medium text-sm">{selectedStudent.className}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Gender</p>
-                  <p className="text-[#0A2540] font-medium">{selectedStudent.gender}</p>
+                  <p className="text-xs text-gray-600 mb-1">Gender</p>
+                  <p className="text-[#0A2540] font-medium text-sm">{selectedStudent.gender}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Term</p>
-                  <p className="text-[#0A2540] font-medium">{currentTerm}</p>
+                  <p className="text-xs text-gray-600 mb-1">Term</p>
+                  <p className="text-[#0A2540] font-medium text-sm">{currentTerm}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-600 mb-1">Academic Year</p>
-                  <p className="text-[#0A2540] font-medium">{currentAcademicYear}</p>
+                  <p className="text-xs text-gray-600 mb-1">Year</p>
+                  <p className="text-[#0A2540] font-medium text-sm">{currentAcademicYear}</p>
                 </div>
               </div>
 
-              {/* Summary Stats */}
-              <div className="grid md:grid-cols-4 gap-4 mt-6">
-                <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
-                  <p className="text-xs text-blue-900 mb-1">Subjects Completed</p>
-                  <p className="text-lg text-blue-900 font-bold">
+              {/* Summary Stats - Compact */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2 mt-3">
+                <div className="p-2 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-xs text-blue-900">Subjects</p>
+                  <p className="text-sm text-blue-900 font-bold">
                     {studentResultData.subjectsCompleted}/{studentResultData.totalSubjects}
                   </p>
                 </div>
-                <div className="p-4 bg-purple-50 rounded-xl border border-purple-200">
-                  <p className="text-xs text-purple-900 mb-1">Total Score</p>
-                  <p className="text-lg text-purple-900 font-bold">{studentResultData.totalScore}</p>
+                <div className="p-2 bg-purple-50 rounded-lg border border-purple-200">
+                  <p className="text-xs text-purple-900">Total</p>
+                  <p className="text-sm text-purple-900 font-bold">{studentResultData.totalScore}</p>
                 </div>
-                <div className="p-4 bg-green-50 rounded-xl border border-green-200">
-                  <p className="text-xs text-green-900 mb-1">Average</p>
-                  <p className="text-lg text-green-900 font-bold">{studentResultData.averageScore}%</p>
+                <div className="p-2 bg-green-50 rounded-lg border border-green-200">
+                  <p className="text-xs text-green-900">Average</p>
+                  <p className="text-sm text-green-900 font-bold">{studentResultData.averageScore}%</p>
                 </div>
-                <div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
-                  <p className="text-xs text-orange-900 mb-1">Position</p>
-                  <p className="text-lg text-orange-900 font-bold">
+                <div className="p-2 bg-orange-50 rounded-lg border border-orange-200">
+                  <p className="text-xs text-orange-900">Position</p>
+                  <p className="text-sm text-orange-900 font-bold">
                     {studentResultData.position > 0 ? `${studentResultData.position}/${studentResultData.totalStudents}` : 'N/A'}
+                  </p>
+                </div>
+                <div className="p-2 bg-indigo-50 rounded-lg border border-indigo-200">
+                  <p className="text-xs text-indigo-900">Attendance</p>
+                  <p className="text-sm text-indigo-900 font-bold">
+                    {studentAttendance?.ratio || '0/0'}
+                  </p>
+                  <p className="text-xs text-indigo-700">
+                    {studentAttendance?.attendanceRate.toFixed(1) || '0'}%
                   </p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Subject Scores */}
-          <Card className="border-[#0A2540]/10">
-            <CardHeader className="bg-gradient-to-r from-[#10B981] to-[#059669] text-white rounded-t-xl">
-              <CardTitle className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5" />
+          {/* Rejection Notice */}
+          {studentResultData?.isRejected && (
+            <Card className="border-red-200 bg-red-50 shadow-sm">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold text-red-800 mb-1">Result Rejected</h3>
+                    <p className="text-xs text-red-700 mb-2">
+                      This result was rejected by the administrator. Please review and make necessary corrections before resubmitting.
+                    </p>
+                    {studentResultData?.existingResult?.rejection_reason && (
+                      <div className="bg-red-100 border border-red-200 rounded p-2">
+                        <p className="text-xs font-medium text-red-800">Rejection Reason:</p>
+                        <p className="text-xs text-red-700">{studentResultData.existingResult.rejection_reason}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Subject Scores - Compact */}
+          <Card className="border-[#0A2540]/10 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-[#10B981] to-[#059669] text-white rounded-t-xl px-4 py-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BookOpen className="w-4 h-4" />
                 Subject Scores
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-6">
+            <CardContent className="p-3">
               {classSubjects.length === 0 ? (
-                <div className="text-center py-8">
-                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500">No subjects assigned to this class</p>
+                <div className="text-center py-6">
+                  <AlertCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                  <p className="text-gray-500 text-sm">No subjects assigned to this class</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {classSubjects.map((assignment: any) => {
-                    if (!assignment) return null;
-                    const score = studentResultData.scores.find(s => s.subject_assignment_id === assignment.id);
-                    
+                <div className="space-y-2">
+                  {classSubjects.map((subject: any) => {
+                    const score = studentResultData.scores.find(s => s.subject_assignment_id === subject.id);
                     return (
-                      <div
-                        key={assignment.id}
-                        className={`p-4 rounded-xl border ${
-                          score?.status === 'Submitted' 
-                            ? 'bg-green-50 border-green-200' 
-                            : 'bg-yellow-50 border-yellow-200'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-[#0A2540] font-medium">{assignment.subject_name}</p>
-                            <p className="text-sm text-gray-600">Teacher: {assignment.teacher_name}</p>
+                      <div key={subject.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                            <BookOpen className="w-4 h-4 text-green-600" />
                           </div>
-
-                          {score ? (
-                            <div className="flex items-center gap-6">
-                              <div className="text-center">
-                                <p className="text-xs text-gray-600">CA1</p>
-                                <p className="text-[#0A2540] font-bold">{score.ca1}</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="text-xs text-gray-600">CA2</p>
-                                <p className="text-[#0A2540] font-bold">{score.ca2}</p>
-                              </div>
-                              <div className="text-center">
-                                <p className="text-xs text-gray-600">Exam</p>
-                                <p className="text-[#0A2540] font-bold">{score.exam}</p>
-                              </div>
-                              <div className="text-center px-4 py-2 bg-white rounded-lg border border-[#0A2540]/20">
-                                <p className="text-xs text-gray-600">Total</p>
-                                <p className="text-[#0A2540] font-bold">{score.total}</p>
-                              </div>
-                              <div className="text-center">
-                                <Badge className={`rounded-xl ${
-                                  score.grade === 'A' ? 'bg-green-100 text-green-800 border-green-300' :
-                                  score.grade === 'B' ? 'bg-blue-100 text-blue-800 border-blue-300' :
-                                  score.grade === 'C' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
-                                  score.grade === 'D' ? 'bg-orange-100 text-orange-800 border-orange-300' :
-                                  'bg-red-100 text-red-800 border-red-300'
-                                }`}>
-                                  Grade {score.grade}
-                                </Badge>
-                              </div>
-                              <Badge className="bg-green-100 text-green-800 border-green-300 rounded-xl">
-                                <CheckCircle className="w-3 h-3 mr-1" />
-                                Submitted
-                              </Badge>
-                            </div>
-                          ) : (
-                            <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 rounded-xl">
-                              <AlertCircle className="w-3 h-3 mr-1" />
-                              Not Submitted
-                            </Badge>
-                          )}
+                          <div>
+                            <p className="text-sm font-medium text-[#0A2540]">{subject.subject_name || 'Unknown Subject'}</p>
+                            <p className="text-xs text-gray-600">{subject.subject_code || ''}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-xs text-gray-600">CA1</p>
+                            <p className="text-sm font-medium">{score?.ca1 || 0}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-gray-600">CA2</p>
+                            <p className="text-sm font-medium">{score?.ca2 || 0}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-gray-600">Exam</p>
+                            <p className="text-sm font-medium">{score?.exam || 0}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-gray-600">Total</p>
+                            <p className="text-sm font-bold text-green-600">{score?.total || 0}</p>
+                          </div>
                         </div>
                       </div>
                     );
@@ -1420,110 +1539,173 @@ export function CompileResultsPage() {
             </CardContent>
           </Card>
 
+          {/* Attendance Input - One Time Entry */}
+          <Card className="border-[#0A2540]/10 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-[#6366F1] to-[#4F46E5] text-white px-4 py-3 rounded-t-xl">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Users className="w-4 h-4" />
+                Attendance Record
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-4">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="text-sm font-medium text-[#0A2540]">Days Present</Label>
+                    <p className="text-xs text-gray-600">
+                      Required: {studentAttendance?.requiredDays || 60} days for {currentTerm}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      max={studentAttendance?.requiredDays || 60}
+                      value={studentAttendanceInput[selectedStudent?.id || 0] || 0}
+                      onChange={(e) => setStudentAttendanceInput(prev => ({
+                        ...prev,
+                        [selectedStudent?.id || 0]: parseInt(e.target.value) || 0
+                      }))}
+                      className="w-20 text-center rounded-lg"
+                      disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
+                    />
+                    <span className="text-sm text-gray-600">days</span>
+                  </div>
+                </div>
+                
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-indigo-800">Attendance Ratio:</span>
+                    <span className="text-lg font-bold text-indigo-900">
+                      {studentAttendance?.ratio || '0/60'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-indigo-700">Attendance Rate:</span>
+                    <span className="text-sm font-semibold text-indigo-800">
+                      {studentAttendance?.attendanceRate.toFixed(1) || '0.0'}%
+                    </span>
+                  </div>
+                </div>
+                
+                {studentResultData?.isSubmitted && !studentResultData?.isRejected && (
+                  <p className="text-xs text-gray-600 mt-1">
+                    Attendance cannot be modified after result submission.
+                  </p>
+                )}
+                
+                {studentResultData?.isRejected && (
+                  <p className="text-xs text-orange-600 mt-1">
+                    Result was rejected. You can edit and resubmit.
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          
           {/* Affective & Psychomotor Forms */}
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Affective Domain Form */}
-            <Card className="border-[#0A2540]/10">
-              <CardHeader className="bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white rounded-t-xl">
-                <CardTitle>Affective Domain Assessment</CardTitle>
+          <div className="grid md:grid-cols-2 gap-4">
+            {/* Affective Domain Form - Compact Design */}
+            <Card className="border-[#0A2540]/10 shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white px-4 py-3 rounded-t-xl">
+                <CardTitle className="text-base">Affective Domain</CardTitle>
               </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                {[
-                  { key: 'attentiveness', label: 'Attentiveness' },
-                  { key: 'honesty', label: 'Honesty' },
-                  { key: 'punctuality', label: 'Punctuality' },
-                  { key: 'neatness', label: 'Neatness' }
-                ].map((field) => (
-                  <div key={field.key} className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">{field.label}</Label>
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-2">
+              <CardContent className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: 'attentiveness', label: 'Attentiveness' },
+                    { key: 'honesty', label: 'Honesty' },
+                    { key: 'punctuality', label: 'Punctuality' },
+                    { key: 'neatness', label: 'Neatness' }
+                  ].map((field) => (
+                    <div key={field.key} className="space-y-1">
+                      <Label className="text-xs font-medium text-gray-700">{field.label}</Label>
+                      <div className="flex items-center space-x-1">
                         {[1, 2, 3, 4, 5].map((rating) => (
                           <button
                             key={rating}
                             type="button"
                             onClick={() => setAffectiveData(prev => ({ ...prev, [field.key]: rating }))}
-                            className={`w-8 h-8 rounded-full border-2 font-semibold text-xs transition-all ${
+                            className={`w-6 h-6 rounded-full border-2 text-xs font-semibold transition-all ${
                               affectiveData[field.key as keyof typeof affectiveData] === rating
                                 ? 'bg-purple-600 border-purple-600 text-white'
                                 : 'bg-white border-gray-300 text-gray-600 hover:border-purple-400'
                             }`}
-                            disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                            disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
                           >
                             {rating}
                           </button>
                         ))}
                       </div>
-                      <span className="text-sm text-gray-500">(1=Poor, 5=Excellent)</span>
+                      <Textarea
+                        value={affectiveData[`${field.key}_remark` as keyof typeof affectiveData] as string}
+                        onChange={(e) => setAffectiveData(prev => ({ ...prev, [`${field.key}_remark`]: e.target.value }))}
+                        placeholder={`${field.label} remarks...`}
+                        className="min-h-[40px] text-xs resize-none"
+                        disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
+                      />
                     </div>
-                    <Textarea
-                      value={affectiveData[`${field.key}_remark` as keyof typeof affectiveData] as string}
-                      onChange={(e) => setAffectiveData(prev => ({ ...prev, [`${field.key}_remark`]: e.target.value }))}
-                      placeholder={`Add remarks for ${field.label.toLowerCase()}...`}
-                      className="min-h-[60px] text-sm"
-                      disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
-                    />
-                  </div>
-                ))}
+                  ))}
+                </div>
                 
                 <Button
                   onClick={handleSaveAffective}
-                  disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
-                  className="w-full bg-purple-600 hover:bg-purple-700 text-white"
+                  disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white h-8 text-sm"
                 >
                   Save Affective Assessment
                 </Button>
               </CardContent>
             </Card>
 
-            {/* Psychomotor Domain Form */}
-            <Card className="border-[#0A2540]/10">
-              <CardHeader className="bg-gradient-to-r from-[#EC4899] to-[#DB2777] text-white rounded-t-xl">
-                <CardTitle>Psychomotor Domain Assessment</CardTitle>
+            {/* Psychomotor Domain Form - Compact Design */}
+            <Card className="border-[#0A2540]/10 shadow-sm">
+              <CardHeader className="bg-gradient-to-r from-[#EC4899] to-[#DB2777] text-white px-4 py-3 rounded-t-xl">
+                <CardTitle className="text-base">Psychomotor Domain</CardTitle>
               </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                {[
-                  { key: 'sports', label: 'Sports' },
-                  { key: 'handwork', label: 'Handwork' },
-                  { key: 'drawing', label: 'Drawing' },
-                  { key: 'music', label: 'Music' }
-                ].map((field) => (
-                  <div key={field.key} className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-700">{field.label}</Label>
-                    <div className="flex items-center space-x-4">
-                      <div className="flex items-center space-x-2">
+              <CardContent className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { key: 'sports', label: 'Sports' },
+                    { key: 'handwork', label: 'Handwork' },
+                    { key: 'drawing', label: 'Drawing' },
+                    { key: 'music', label: 'Music' }
+                  ].map((field) => (
+                    <div key={field.key} className="space-y-1">
+                      <Label className="text-xs font-medium text-gray-700">{field.label}</Label>
+                      <div className="flex items-center space-x-1">
                         {[1, 2, 3, 4, 5].map((rating) => (
                           <button
                             key={rating}
                             type="button"
                             onClick={() => setPsychomotorData(prev => ({ ...prev, [field.key]: rating }))}
-                            className={`w-8 h-8 rounded-full border-2 font-semibold text-xs transition-all ${
+                            className={`w-6 h-6 rounded-full border-2 text-xs font-semibold transition-all ${
                               psychomotorData[field.key as keyof typeof psychomotorData] === rating
                                 ? 'bg-pink-600 border-pink-600 text-white'
                                 : 'bg-white border-gray-300 text-gray-600 hover:border-pink-400'
                             }`}
-                            disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                            disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
                           >
                             {rating}
                           </button>
                         ))}
                       </div>
-                      <span className="text-sm text-gray-500">(1=Poor, 5=Excellent)</span>
+                      <Textarea
+                        value={psychomotorData[`${field.key}_remark` as keyof typeof psychomotorData] as string}
+                        onChange={(e) => setPsychomotorData(prev => ({ ...prev, [`${field.key}_remark`]: e.target.value }))}
+                        placeholder={`${field.label} remarks...`}
+                        className="min-h-[40px] text-xs resize-none"
+                        disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
+                      />
                     </div>
-                    <Textarea
-                      value={psychomotorData[`${field.key}_remark` as keyof typeof psychomotorData] as string}
-                      onChange={(e) => setPsychomotorData(prev => ({ ...prev, [`${field.key}_remark`]: e.target.value }))}
-                      placeholder={`Add remarks for ${field.label.toLowerCase()}...`}
-                      className="min-h-[60px] text-sm"
-                      disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
-                    />
-                  </div>
-                ))}
+                  ))}
+                </div>
                 
                 <Button
                   onClick={handleSavePsychomotor}
-                  disabled={studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
-                  className="w-full bg-pink-600 hover:bg-pink-700 text-white"
+                  disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
+                  className="w-full bg-pink-600 hover:bg-pink-700 text-white h-8 text-sm"
                 >
                   Save Psychomotor Assessment
                 </Button>
@@ -1531,105 +1713,186 @@ export function CompileResultsPage() {
             </Card>
           </div>
 
-          {/* Class Teacher Comment */}
-          <Card className="border-[#0A2540]/10">
-            <CardHeader className="bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-t-xl">
-              <CardTitle>Class Teacher Comment</CardTitle>
+          {/* Class Teacher Comment - Compact */}
+          <Card className="border-[#0A2540]/10 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white px-4 py-3 rounded-t-xl">
+              <CardTitle className="text-base">Class Teacher Comment</CardTitle>
             </CardHeader>
-            <CardContent className="p-6 space-y-4">
+            <CardContent className="p-4 space-y-3">
               {/* Auto-comment toggle */}
-              <div className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
+              <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
                   id="auto-comment"
                   checked={useAutoComment}
-                  onChange={(e) => {
-                    setUseAutoComment(e.target.checked);
-                    if (e.target.checked && selectedStudent) {
-                      const options = generateMultipleCommentOptions(
-                        studentResultData.averageScore,
-                        studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0,
-                        studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0
-                      );
-                      setCommentOptions(options);
-                      setShowCommentOptions(true);
-                    } else {
-                      setShowCommentOptions(false);
-                    }
-                  }}
-                  className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  onChange={(e) => setUseAutoComment(e.target.checked)}
+                  disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
+                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
                 />
-                <Label htmlFor="auto-comment" className="text-sm font-medium text-blue-900">
-                  Generate automatic comment based on student performance
+                <Label htmlFor="auto-comment" className="text-sm text-gray-700">
+                  Use auto-generated comment
                 </Label>
               </div>
 
-              {/* Comment options selection */}
-              {showCommentOptions && commentOptions.length > 0 && (
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm font-semibold text-blue-800 mb-3">Choose from generated comments:</p>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
-                    {commentOptions.map((option, index) => (
-                      <div key={index} className="flex items-start space-x-3 p-3 bg-white rounded-lg border border-blue-100 hover:border-blue-300 cursor-pointer transition-colors"
-                           onClick={() => setClassTeacherComment(option)}>
-                        <input
-                          type="radio"
-                          name="comment-option"
-                          checked={classTeacherComment === option}
-                          onChange={() => setClassTeacherComment(option)}
-                          className="mt-1 w-4 h-4 text-blue-600"
-                        />
-                        <p className="text-sm text-gray-700 flex-1">{option}</p>
+              {/* Comment options */}
+              {useAutoComment && showCommentOptions && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Select a comment:</p>
+                  <div className="space-y-1">
+                    {generateMultipleCommentOptions(
+                      studentResultData?.averageScore || 0,
+                      studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0,
+                      studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0
+                    ).map((comment: string, index: number) => (
+                      <div
+                        key={index}
+                        onClick={() => {
+                          setClassTeacherComment(comment);
+                          setShowCommentOptions(false);
+                        }}
+                        className="p-2 bg-white border border-gray-200 rounded cursor-pointer hover:bg-orange-50 hover:border-orange-300 transition-colors"
+                      >
+                        <p className="text-sm text-gray-700">{comment}</p>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-3 flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        const options = generateMultipleCommentOptions(
-                          studentResultData.averageScore,
-                          studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0,
-                          studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0
-                        );
-                        setCommentOptions(options);
-                      }}
-                      className="text-blue-600 border-blue-300 hover:bg-blue-50"
-                    >
-                      <RefreshCw className="w-4 h-4 mr-1" />
-                      Generate More Options
-                    </Button>
-                    <span className="text-xs text-gray-500">
-                      Click on any comment to select it, or generate more options
-                    </span>
-                  </div>
+                  <Button
+                    onClick={() => setShowCommentOptions(false)}
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 h-6 text-xs"
+                  >
+                    Close
+                  </Button>
                 </div>
               )}
 
-              {/* Position and performance summary */}
-              {selectedStudent && (
-                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+              {/* Generate more options */}
+              {useAutoComment && !showCommentOptions && (
+                <div className="flex items-center justify-between">
+                  <Button
+                    onClick={() => setShowCommentOptions(true)}
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    Generate Options
+                  </Button>
+                  <span className="text-xs text-gray-500">
+                    Click to select auto-comment
+                  </span>
+                </div>
+              )}
+
+            </CardContent>
+          </Card>
+
+          {/* Position and performance summary - Compact */}
+          {selectedStudent && (
+            <div className="mb-4">
+              {/* Status Indicator */}
+              {studentResultData?.existingResult && (
+            <Alert className={`mb-4 ${
+              studentResultData.existingResult.status === 'Rejected' 
+                ? 'bg-red-50 border-red-200' 
+                : studentResultData.existingResult.status === 'Approved'
+                ? 'bg-green-50 border-green-200'
+                : 'bg-yellow-50 border-yellow-200'
+            }`}>
+              {studentResultData.existingResult.status === 'Rejected' && (
+                <>
+                  <AlertCircle className="h-4 w-4 text-red-600" />
+                  <AlertDescription className="text-red-800">
+                    <strong>Result Rejected by Admin</strong>
+                    {studentResultData.existingResult.rejection_reason && (
+                      <p className="text-sm mt-1">Reason: {studentResultData.existingResult.rejection_reason}</p>
+                    )}
+                    <p className="text-sm mt-2">You can now edit and resubmit this result.</p>
+                  </AlertDescription>
+                </>
+              )}
+              {studentResultData.existingResult.status === 'Approved' && (
+                <>
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <AlertDescription className="text-green-800">
+                    <strong>Result Approved</strong> - This result has been approved and published.
+                  </AlertDescription>
+                </>
+              )}
+              {studentResultData.existingResult.status === 'Submitted' && (
+                <>
+                  <Clock className="h-4 w-4 text-yellow-600" />
+                  <AlertDescription className="text-yellow-800">
+                    <strong>Result Pending Approval</strong> - This result is waiting for admin approval.
+                  </AlertDescription>
+                </>
+              )}
+            </Alert>
+          )}
+          
+          {/* Position and performance summary - Compact */}
+          <div className="grid grid-cols-2 gap-2 p-3 bg-gray-50 rounded-lg">
                   <div className="text-center">
-                    <p className="text-2xl font-bold text-blue-600">
+                    <p className="text-lg font-bold text-blue-600">
                       {studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0}
                     </p>
-                    <p className="text-sm text-gray-600">Position in Class</p>
+                    <p className="text-xs text-gray-600">Position</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">
+                    <p className="text-lg font-bold text-green-600">
                       {studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0}
                     </p>
-                    <p className="text-sm text-gray-600">Total Students</p>
+                    <p className="text-xs text-gray-600">Total Students</p>
                   </div>
+                </div>
+            </div>
+          )}
+
+          {/* Class Teacher Comment - Compact */}
+          <Card className="border-[#0A2540]/10 shadow-sm">
+            <CardHeader className="bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white px-4 py-3 rounded-t-xl">
+              <CardTitle className="text-base">Class Teacher Comment</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 space-y-3">
+              {/* Auto-comment toggle */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="auto-comment"
+                  checked={useAutoComment}
+                  onChange={(e) => setUseAutoComment(e.target.checked)}
+                  disabled={studentResultData?.isSubmitted && !studentResultData?.isRejected}
+                  className="rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                />
+                <Label htmlFor="auto-comment" className="text-sm text-gray-700">
+                  Use auto-generated comment
+                </Label>
+              </div>
+
+              {/* Generate more options */}
+              {useAutoComment && !showCommentOptions && (
+                <div className="flex items-center justify-between">
+                  <Button
+                    onClick={() => setShowCommentOptions(true)}
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    Generate Options
+                  </Button>
+                  <span className="text-xs text-gray-500">
+                    Click to select auto-comment
+                  </span>
                 </div>
               )}
 
-              {/* Auto-comment preview */}
-              {useAutoComment && selectedStudent && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <p className="text-sm font-semibold text-green-800 mb-2">Auto-generated Comment Preview:</p>
-                  <p className="text-sm text-green-700">
+              {/* Auto-comment preview - Compact */}
+              {useAutoComment && selectedStudent && studentResultData && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-xs font-semibold text-green-800 mb-1">Preview:</p>
+                  <p className="text-xs text-green-700">
                     {generateAutoComment(
                       studentResultData.averageScore,
                       studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0,
@@ -1639,52 +1902,88 @@ export function CompileResultsPage() {
                 </div>
               )}
 
+              {/* Comment options */}
+              {useAutoComment && showCommentOptions && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-sm font-medium text-gray-700 mb-2">Select a comment:</p>
+                  <div className="space-y-1">
+                    {generateMultipleCommentOptions(
+                      studentResultData?.averageScore || 0,
+                      studentsCompletion.find(s => s.studentId === selectedStudent.id)?.position || 0,
+                      studentsCompletion.find(s => s.studentId === selectedStudent.id)?.totalStudents || 0
+                    ).map((comment: string, index: number) => (
+                      <div
+                        key={index}
+                        onClick={() => {
+                          setClassTeacherComment(comment);
+                          setShowCommentOptions(false);
+                        }}
+                        className="p-2 bg-white border border-gray-200 rounded cursor-pointer hover:bg-orange-50 hover:border-orange-300 transition-colors"
+                      >
+                        <p className="text-sm text-gray-700">{comment}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    onClick={() => setShowCommentOptions(false)}
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 h-6 text-xs"
+                  >
+                    Close
+                  </Button>
+                </div>
+              )}
+
               <Textarea
                 value={useAutoComment 
                   ? classTeacherComment || ""
-                  : classTeacherComment || studentResultData.existingResult?.class_teacher_comment || ""
+                  : classTeacherComment || studentResultData?.existingResult?.class_teacher_comment || ""
                 }
                 onChange={(e) => !useAutoComment && setClassTeacherComment(e.target.value)}
                 placeholder="Enter your comment for this student..."
-                className="min-h-32 rounded-xl border-[#0A2540]/20"
-                disabled={useAutoComment || studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
+                className="min-h-20 rounded-lg border-[#0A2540]/20 text-sm"
+                disabled={useAutoComment || studentResultData?.existingResult?.status === 'Submitted' || studentResultData?.existingResult?.status === 'Approved'}
               />
-              {studentResultData.existingResult?.status === 'Submitted' && (
-                <p className="text-sm text-gray-600 mt-2">
-                  This result has been submitted to admin and cannot be edited.
+              {studentResultData?.existingResult?.status === 'Submitted' && (
+                <p className="text-xs text-gray-600 mt-1">
+                  This result has been submitted and cannot be edited.
                 </p>
               )}
             </CardContent>
           </Card>
 
-          {/* Submit Button */}
-          <Card className="border-[#0A2540]/10">
-            <CardContent className="p-6">
+          {/* Submit Button - Compact */}
+          <Card className="border-[#0A2540]/10 shadow-sm">
+            <CardContent className="p-4">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[#0A2540] font-medium mb-1">Ready to Submit?</p>
-                  <p className="text-sm text-gray-600">
-                    {studentResultData.isComplete 
-                      ? "All requirements met. You can submit this result for approval." 
-                      : "Complete all scores and assessments before submitting."}
+                <div className="flex-1">
+                  <p className="text-[#0A2540] font-medium text-sm mb-1">Ready to Submit?</p>
+                  <p className="text-xs text-gray-600">
+                    {studentResultData?.isComplete 
+                      ? "All requirements met. Submit for approval." 
+                      : "Complete all requirements before submitting."}
                   </p>
                 </div>
 
                 <Button
                   onClick={handleSubmitResult}
-                  disabled={!studentResultData.isComplete || (!useAutoComment && !classTeacherComment.trim()) || (useAutoComment && !classTeacherComment.trim() && !showCommentOptions) || studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'}
-                  className="bg-[#10B981] hover:bg-[#059669] text-white rounded-xl px-8"
+                  disabled={!studentResultData?.isComplete || (!useAutoComment && !classTeacherComment.trim()) || (useAutoComment && !classTeacherComment.trim() && !showCommentOptions) || (studentResultData?.isSubmitted && !studentResultData?.isRejected)}
+                  className="bg-[#10B981] hover:bg-[#059669] text-white rounded-lg px-6 h-8 text-sm"
                 >
-                  <Send className="w-4 h-4 mr-2" />
-                  {studentResultData.existingResult?.status === 'Submitted' || studentResultData.existingResult?.status === 'Approved'
-                    ? 'Already Submitted'
-                    : 'Submit Result'}
+                  <Send className="w-3 h-3 mr-1" />
+                  {studentResultData?.isSubmitted && !studentResultData?.isRejected
+                    ? 'Submitted'
+                    : studentResultData?.isRejected
+                    ? 'Resubmit'
+                    : 'Submit'}
                 </Button>
               </div>
             </CardContent>
           </Card>
         </div>
       )}
-    </div>
+
+          </div>
   );
 }

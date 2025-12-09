@@ -59,7 +59,24 @@ export function ProfessionalResultSheet({
   onPrint,
   onDownload
 }: ProfessionalResultSheetProps) {
-  const { students, classes, subjects, teachers, currentUser, sqlDatabase } = useSchool();
+  const { 
+    students, 
+    classes, 
+    subjects, 
+    teachers, 
+    currentUser, 
+    schoolSettings,
+    compiledResults,
+    scores,
+    subjectAssignments,
+    affectiveDomains,
+    psychomotorDomains,
+    loadScoresFromAPI,
+    loadSubjectAssignmentsFromAPI,
+    loadSubjectsFromAPI,
+    loadAffectiveDomainsFromAPI,
+    loadPsychomotorDomainsFromAPI
+  } = useSchool();
   const [loading, setLoading] = useState(true);
   const [resultData, setResultData] = useState<any>(null);
   const [subjectScores, setSubjectScores] = useState<SubjectScore[]>([]);
@@ -82,6 +99,15 @@ export function ProfessionalResultSheet({
       try {
         setLoading(true);
 
+        // Ensure all necessary data is loaded
+        await Promise.all([
+          scores.length === 0 && loadScoresFromAPI(),
+          subjectAssignments.length === 0 && loadSubjectAssignmentsFromAPI(),
+          subjects.length === 0 && loadSubjectsFromAPI(),
+          affectiveDomains.length === 0 && loadAffectiveDomainsFromAPI(),
+          psychomotorDomains.length === 0 && loadPsychomotorDomainsFromAPI()
+        ]);
+
         // Get student information
         const student = students.find(s => s.id === studentId);
         const studentClass = classes.find(c => c.id === classId);
@@ -91,85 +117,111 @@ export function ProfessionalResultSheet({
           return;
         }
 
-        // Load compiled result
-        const resultQuery = `
-          SELECT * FROM compiled_results 
-          WHERE student_id = ? AND class_id = ? AND term = ? AND academic_year = ?
-        `;
-        const resultResponse = await sqlDatabase.executeQuery(resultQuery, [studentId, classId, term, academicYear]);
-        
-        if (resultResponse.success && resultResponse.data.length > 0) {
-          const result = resultResponse.data[0];
-          setResultData(result);
+        // Find compiled result from context
+        const compiledResult = compiledResults.find(cr => 
+          cr.student_id === studentId && 
+          cr.class_id === classId && 
+          cr.term === term && 
+          cr.academic_year === academicYear
+        );
 
-          // Load subject scores
-          const scoresQuery = `
-            SELECT s.*, sub.name as subject_name, sub.code as subject_code,
-                   t.first_name as teacher_first_name, t.last_name as teacher_last_name,
-                   (SELECT AVG(sc.total) FROM scores sc 
-                    JOIN subject_assignments sa ON sc.subject_assignment_id = sa.id 
-                    WHERE sa.subject_id = s.subject_id AND sa.class_id = ? AND sc.academic_year = ? AND sc.term = ?) as class_average,
-                   (SELECT MIN(sc.total) FROM scores sc 
-                    JOIN subject_assignments sa ON sc.subject_assignment_id = sa.id 
-                    WHERE sa.subject_id = s.subject_id AND sa.class_id = ? AND sc.academic_year = ? AND sc.term = ?) as class_minimum,
-                   (SELECT MAX(sc.total) FROM scores sc 
-                    JOIN subject_assignments sa ON sc.subject_assignment_id = sa.id 
-                    WHERE sa.subject_id = s.subject_id AND sa.class_id = ? AND sc.academic_year = ? AND sc.term = ?) as class_maximum
-            FROM scores s
-            JOIN subject_assignments sa ON s.subject_assignment_id = sa.id
-            JOIN subjects sub ON sa.subject_id = sub.id
-            LEFT JOIN teachers t ON sa.teacher_id = t.id
-            WHERE s.student_id = ? AND sa.class_id = ? AND s.academic_year = ? AND s.term = ?
-            ORDER BY sub.name
-          `;
-          
-          const scoresResponse = await sqlDatabase.executeQuery(scoresQuery, [
-            classId, academicYear, term, classId, academicYear, term, classId, academicYear, term,
-            studentId, classId, academicYear, term
-          ]);
+        if (compiledResult) {
+          setResultData(compiledResult);
 
-          if (scoresResponse.success && scoresResponse.data.length > 0) {
-            const formattedScores = scoresResponse.data.map((score: any) => {
-              const gradeInfo = getGrade(score.total || 0);
-              return {
-                subject_name: score.subject_name,
-                ca1: score.ca1 || 0,
-                ca2: score.ca2 || 0,
-                exam: score.exam || 0,
-                total: score.total || 0,
-                grade: gradeInfo.grade,
-                remark: gradeInfo.remark,
-                class_average: score.class_average || 0,
-                class_minimum: score.class_minimum || 0,
-                class_maximum: score.class_maximum || 0,
-                subject_teacher: score.teacher_first_name ? 
-                  `${score.teacher_first_name} ${score.teacher_last_name}` : 'Not Assigned'
-              };
+          // Process subject scores from context
+          const studentScores = scores.filter(score => 
+            score.student_id === studentId &&
+            score.academic_year === academicYear &&
+            score.term === term
+          );
+
+          // Enhance scores with subject information and class statistics
+          const enhancedScores = studentScores.map(score => {
+            const subjectAssignment = subjectAssignments.find(sa => sa.id === score.subject_assignment_id);
+            const subject = subjectAssignment ? subjects.find(s => s.id === subjectAssignment.subject_id) : null;
+            const teacher = subjectAssignment ? teachers.find(t => t.id === subjectAssignment.teacher_id) : null;
+
+            // Calculate class statistics for this subject
+            const classScores = scores.filter(s => {
+              const assignment = subjectAssignments.find(sa => sa.id === s.subject_assignment_id);
+              return assignment && 
+                     assignment.subject_id === subjectAssignment?.subject_id &&
+                     s.academic_year === academicYear &&
+                     s.term === term &&
+                     s.total > 0;
             });
-            setSubjectScores(formattedScores);
+
+            const validScores = classScores.map(cs => cs.total || 0);
+            const classAverage = validScores.length > 0 ? validScores.reduce((a, b) => a + b, 0) / validScores.length : 0;
+            const classMinimum = validScores.length > 0 ? Math.min(...validScores) : 0;
+            const classMaximum = validScores.length > 0 ? Math.max(...validScores) : 0;
+
+            const gradeInfo = getGrade(score.total || 0);
+
+            return {
+              subject_name: subject ? subject.name : 'Unknown Subject',
+              ca1: score.ca1 || 0,
+              ca2: score.ca2 || 0,
+              exam: score.exam || 0,
+              total: score.total || 0,
+              grade: gradeInfo.grade,
+              remark: gradeInfo.remark,
+              class_average: parseFloat(classAverage.toFixed(2)),
+              class_minimum: classMinimum,
+              class_maximum: classMaximum,
+              subject_teacher: teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Not Assigned'
+            };
+          }).sort((a, b) => a.subject_name.localeCompare(b.subject_name));
+
+          setSubjectScores(enhancedScores);
+
+          // Find affective domain for this student
+          const studentAffective = affectiveDomains.find(ad => 
+            ad.student_id === studentId && 
+            ad.class_id === classId && 
+            ad.term === term && 
+            ad.academic_year === academicYear
+          );
+
+          if (studentAffective) {
+            setAffectiveDomain({
+              attentiveness: studentAffective.attentiveness || 0,
+              honesty: studentAffective.honesty || 0,
+              punctuality: studentAffective.punctuality || 0,
+              neatness: studentAffective.neatness || 0,
+              attentiveness_remark: studentAffective.attentiveness_remark || '',
+              honesty_remark: studentAffective.honesty_remark || '',
+              punctuality_remark: studentAffective.punctuality_remark || '',
+              neatness_remark: studentAffective.neatness_remark || ''
+            });
           }
 
-          // Load affective domain
-          const affectiveQuery = `
-            SELECT * FROM affective_domains 
-            WHERE student_id = ? AND class_id = ? AND term = ? AND academic_year = ?
-          `;
-          const affectiveResponse = await sqlDatabase.executeQuery(affectiveQuery, [studentId, classId, term, academicYear]);
-          
-          if (affectiveResponse.success && affectiveResponse.data.length > 0) {
-            setAffectiveDomain(affectiveResponse.data[0]);
-          }
+          // Find psychomotor domain for this student
+          const studentPsychomotor = psychomotorDomains.find(pd => 
+            pd.student_id === studentId && 
+            pd.class_id === classId && 
+            pd.term === term && 
+            pd.academic_year === academicYear
+          );
 
-          // Load psychomotor domain
-          const psychomotorQuery = `
-            SELECT * FROM psychomotor_domains 
-            WHERE student_id = ? AND class_id = ? AND term = ? AND academic_year = ?
-          `;
-          const psychomotorResponse = await sqlDatabase.executeQuery(psychomotorQuery, [studentId, classId, term, academicYear]);
-          
-          if (psychomotorResponse.success && psychomotorResponse.data.length > 0) {
-            setPsychomotorDomain(psychomotorResponse.data[0]);
+          if (studentPsychomotor) {
+            setPsychomotorDomain({
+              sports: studentPsychomotor.sports || 0,
+              handwork: studentPsychomotor.handwork || 0,
+              drawing: studentPsychomotor.drawing || 0,
+              music: studentPsychomotor.music || 0,
+              sports_remark: studentPsychomotor.sports_remark || '',
+              handwork_remark: studentPsychomotor.handwork_remark || '',
+              drawing_remark: studentPsychomotor.drawing_remark || '',
+              music_remark: studentPsychomotor.music_remark || ''
+            });
           }
+        } else {
+          // No compiled result found
+          setResultData(null);
+          setSubjectScores([]);
+          setAffectiveDomain(null);
+          setPsychomotorDomain(null);
         }
 
         setLoading(false);
@@ -182,7 +234,7 @@ export function ProfessionalResultSheet({
     if (studentId && classId && term && academicYear) {
       loadResultData();
     }
-  }, [studentId, classId, term, academicYear, students, classes, sqlDatabase]);
+  }, [studentId, classId, term, academicYear, students, classes, compiledResults, scores, subjectAssignments, subjects, teachers, affectiveDomains, psychomotorDomains, loadScoresFromAPI, loadSubjectAssignmentsFromAPI, loadSubjectsFromAPI, loadAffectiveDomainsFromAPI, loadPsychomotorDomainsFromAPI]);
 
   const student = students.find(s => s.id === studentId);
   const studentClass = classes.find(c => c.id === classId);
@@ -212,9 +264,10 @@ export function ProfessionalResultSheet({
     <div className="bg-white max-w-4xl mx-auto shadow-lg" id="result-sheet">
       {/* School Header */}
       <div className="text-center border-b-4 border-blue-800 py-6">
-        <h1 className="text-3xl font-bold text-blue-900 mb-2">GRACELAND ACADEMY</h1>
-        <p className="text-gray-600 mb-1">P.O. Box 1234, Your City, Country</p>
-        <p className="text-gray-600 mb-1">Tel: +123-456-7890 | Email: info@graceland.edu.ng</p>
+        <h1 className="text-3xl font-bold text-blue-900 mb-2">{schoolSettings.school_name || 'GRACELAND ACADEMY'}</h1>
+        <p className="text-gray-600 mb-1">{schoolSettings.school_address || 'P.O. Box 1234, Your City, Country'}</p>
+        <p className="text-gray-600 mb-1">Tel: {schoolSettings.school_phone || '+123-456-7890'} | Email: {schoolSettings.school_email || 'info@graceland.edu.ng'}</p>
+        <p className="text-gray-600 italic">{schoolSettings.school_motto || 'Excellence in Education'}</p>
         <p className="text-gray-600">Website: www.graceland.edu.ng</p>
         
         <div className="mt-4 pt-4 border-t border-gray-300">
@@ -350,7 +403,7 @@ export function ProfessionalResultSheet({
           <div>
             <h3 className="font-bold text-center mb-2">PRINCIPAL'S COMMENT</h3>
             <div className="border border-gray-400 p-2 h-20">
-              <p className="text-sm">{resultData.principal_comment || 'No comment provided'}</p>
+              <p className="text-sm">{schoolSettings?.principal_comment || ''}</p>
             </div>
           </div>
         </div>
@@ -463,8 +516,11 @@ export function ProfessionalResultSheet({
           <div className="text-center">
             <div className="border-b-2 border-gray-400 mb-2 pb-8">
               <p className="text-sm text-gray-600">Principal's Signature</p>
+              {schoolSettings?.principal_signature && (
+                <img src={schoolSettings.principal_signature} alt="Principal Signature" className="max-h-12 mx-auto" />
+              )}
             </div>
-            <p className="text-sm font-semibold">{resultData.principal_name || '_________________'}</p>
+            <p className="text-sm font-semibold">{schoolSettings?.principal_name || '_________________'}</p>
             <p className="text-xs text-gray-500">Date: _______________</p>
           </div>
           <div className="text-center">

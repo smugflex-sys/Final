@@ -7,31 +7,51 @@ import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { useSchool } from "../../contexts/SchoolContext";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 
 export function MessageTeacherPage() {
-  const { currentUser, students, parents, teachers } = useSchool();
+  const { currentUser, students, parents, teachers, accountants, addNotification } = useSchool();
   const [messageData, setMessageData] = useState({
     childId: "",
-    teacherId: "",
+    recipientType: "admin", // admin, accountant
     subject: "",
     message: ""
   });
 
-  const parent = parents.find(p => p.id === currentUser?.linkedId);
-  const children = parent && parent.studentIds ? students.filter(s => parent.studentIds.includes(s.id)) : [];
+  const parent = parents.find(p => p.id === currentUser?.linked_id);
+  const children = parent && parent.student_ids ? students.filter(s => parent.student_ids!.includes(s.id)) : [];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast.success("Message sent to teacher successfully!");
-    setMessageData({ childId: "", teacherId: "", subject: "", message: "" });
+    
+    try {
+      const recipientText = messageData.recipientType === "accountant" ? "Accountant" : "School Administration";
+      const targetAudience = messageData.recipientType === "accountant" ? "accountants" : "admin";
+      
+      // Create notification for the appropriate recipient
+      await addNotification({
+        title: `Parent Message: ${messageData.subject}`,
+        message: `From: ${parent?.firstName} ${parent?.lastName}\nChild: ${children.find(c => c.id === parseInt(messageData.childId))?.firstName} ${children.find(c => c.id === parseInt(messageData.childId))?.lastName}\nTo: ${recipientText}\n\n${messageData.message}`,
+        type: 'message' as any,
+        targetAudience: targetAudience as any,
+        sentBy: currentUser?.id || 0,
+        sentDate: new Date().toISOString(),
+        isRead: false,
+        readBy: []
+      });
+
+      toast.success(`Message sent to ${recipientText} successfully!`);
+      setMessageData({ childId: "", recipientType: "admin", subject: "", message: "" });
+    } catch (error) {
+      toast.error("Failed to send message. Please try again.");
+    }
   };
 
   return (
     <div className="space-y-6">
       <div className="mb-6">
-        <h1 className="text-[#1F2937] mb-2">Message Teacher</h1>
-        <p className="text-[#6B7280]">Send messages to your child's teachers</p>
+        <h1 className="text-[#1F2937] mb-2">Message School</h1>
+        <p className="text-[#6B7280]">Send messages to the school administration</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -46,7 +66,7 @@ export function MessageTeacherPage() {
                   <Label htmlFor="child">Regarding Child *</Label>
                   <Select
                     value={messageData.childId}
-                    onValueChange={(value) => setMessageData({ ...messageData, childId: value })}
+                    onValueChange={(value: string) => setMessageData({ ...messageData, childId: value })}
                     required
                   >
                     <SelectTrigger className="rounded-lg">
@@ -63,21 +83,18 @@ export function MessageTeacherPage() {
                 </div>
 
                 <div>
-                  <Label htmlFor="teacher">Send To Teacher *</Label>
+                  <Label htmlFor="recipient">Send To *</Label>
                   <Select
-                    value={messageData.teacherId}
-                    onValueChange={(value) => setMessageData({ ...messageData, teacherId: value })}
+                    value={messageData.recipientType}
+                    onValueChange={(value: string) => setMessageData({ ...messageData, recipientType: value })}
                     required
                   >
                     <SelectTrigger className="rounded-lg">
-                      <SelectValue placeholder="Select teacher" />
+                      <SelectValue placeholder="Select recipient" />
                     </SelectTrigger>
                     <SelectContent>
-                      {teachers.map((teacher) => (
-                        <SelectItem key={teacher.id} value={teacher.id.toString()}>
-                          {teacher.firstName} {teacher.lastName} - {teacher.specialization.join(', ')}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="admin">School Administration</SelectItem>
+                      <SelectItem value="accountant">Accountant (Fee Related)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -108,7 +125,7 @@ export function MessageTeacherPage() {
 
                 <Button type="submit" className="w-full rounded-lg bg-[#3B82F6] hover:bg-[#2563EB]">
                   <Send className="w-4 h-4 mr-2" />
-                  Send Message
+                  Send Message to School
                 </Button>
               </form>
             </CardContent>

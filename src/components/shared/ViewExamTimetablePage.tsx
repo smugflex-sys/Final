@@ -33,7 +33,7 @@ export function ViewExamTimetablePage({ userRole }: ViewExamTimetablePageProps) 
       const parent = parents.find(p => p.id === currentUser?.linked_id);
       if (parent) {
         const childrenClasses = students
-          .filter(s => parent.student_ids.includes(s.id))
+          .filter(s => parent.student_ids?.includes(s.id))
           .map(s => s.class_id);
         return classes.filter(c => childrenClasses.includes(c.id));
       }
@@ -87,7 +87,7 @@ export function ViewExamTimetablePage({ userRole }: ViewExamTimetablePageProps) 
         const day = date.toLocaleDateString('en-US', { weekday: 'long' });
         const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         
-        csvContent += `${formattedDate},${day},${timetable.subject_name},${timetable.start_time},${timetable.end_time},${timetable.duration},${timetable.venue},"${timetable.instructions || 'N/A'}"\n`;
+        csvContent += `${formattedDate},${day},${timetable.subject_name},${timetable.start_time},${timetable.end_time},${timetable.duration_minutes},${timetable.venue},"${timetable.instructions || 'N/A'}"\n`;
       });
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -204,13 +204,16 @@ export function ViewExamTimetablePage({ userRole }: ViewExamTimetablePageProps) 
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-3">
                             <h4 className="text-slate-900">{exam.subject_name}</h4>
+                            <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs">
+                              {exam.exam_type}
+                            </span>
                             {selectedClassId === 0 && (
-                              <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
                                 {exam.class_name}
                               </span>
                             )}
                             <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">
-                              {exam.duration} minutes
+                              {exam.duration_minutes} minutes
                             </span>
                           </div>
 

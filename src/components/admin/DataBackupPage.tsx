@@ -6,7 +6,7 @@ import { Badge } from "../ui/badge";
 import { Progress } from "../ui/progress";
 import { Alert, AlertDescription } from "../ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "../ui/dialog";
-import { toast } from "sonner@2.0.3";
+import { toast } from "sonner";
 import { useSchool } from "../../contexts/SchoolContext";
 import { 
   exportDataAsJSON, 
@@ -25,9 +25,6 @@ import {
   exportCompiledResultsToCSV,
   exportPaymentsToCSV,
   exportFeeBalancesToCSV,
-  exportAttendanceToCSV,
-  exportActivityLogsToCSV,
-  exportDebtorListToCSV,
 } from "../../utils/csvExporter";
 
 export function DataBackupPage() {
@@ -113,28 +110,28 @@ export function DataBackupPage() {
   };
 
   // New CSV Export Functions using utilities
-  const handleExportStudents = () => {
-    exportStudentsToCSV(students);
+  const handleExportStudents = async () => {
+    await exportStudentsToCSV();
     toast.success(`Exported ${students.length} students`);
   };
 
-  const handleExportTeachers = () => {
-    exportTeachersToCSV(teachers);
+  const handleExportTeachers = async () => {
+    await exportTeachersToCSV();
     toast.success(`Exported ${teachers.length} teachers`);
   };
 
-  const handleExportParents = () => {
-    exportParentsToCSV(parents);
+  const handleExportParents = async () => {
+    await exportParentsToCSV();
     toast.success(`Exported ${parents.length} parents`);
   };
 
-  const handleExportClasses = () => {
-    exportClassesToCSV(classes);
+  const handleExportClasses = async () => {
+    await exportClassesToCSV();
     toast.success(`Exported ${classes.length} classes`);
   };
 
-  const handleExportSubjects = () => {
-    exportSubjectsToCSV(subjects);
+  const handleExportSubjects = async () => {
+    await exportSubjectsToCSV();
     toast.success(`Exported ${subjects.length} subjects`);
   };
 
@@ -330,7 +327,10 @@ export function DataBackupPage() {
 
   // Export Users (passwords excluded for security)
   const exportUsers = () => {
-    const safeUsers = users.map(({ password, ...user }) => user);
+    const safeUsers = users.map((user: any) => {
+  const { password, ...safeUser } = user;
+  return safeUser;
+});
     const headers = ['id', 'username', 'role', 'linkedId', 'email', 'status'];
     const csv = convertToCSV(safeUsers, headers);
     downloadFile(csv, `users_${new Date().toISOString().split('T')[0]}.csv`);
@@ -360,9 +360,9 @@ export function DataBackupPage() {
 
     const completeData = {
       metadata: {
-        schoolName: schoolSettings.schoolName,
-        schoolMotto: schoolSettings.schoolMotto,
-        principalName: schoolSettings.principalName,
+        schoolName: schoolSettings.school_name,
+        schoolMotto: schoolSettings.school_motto,
+        principalName: schoolSettings.principal_name,
         currentTerm,
         currentAcademicYear,
         backupDate: new Date().toISOString(),
@@ -382,7 +382,10 @@ export function DataBackupPage() {
       feeStructures,
       studentFeeBalances,
       payments,
-      users: users.map(({ password, ...user }) => user), // Exclude passwords
+      users: users.map((user: any) => {
+        const { password, ...safeUser } = user;
+        return safeUser;
+      }), // Exclude passwords
       notifications,
       activityLogs,
     };

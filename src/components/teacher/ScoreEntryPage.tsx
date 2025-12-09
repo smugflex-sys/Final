@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { 
   Upload, 
   Download, 
@@ -8,7 +8,8 @@ import {
   Edit3,
   Save,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Clock
 } from "lucide-react";
 import { Card, CardContent, CardHeader } from "../ui/card";
 import { Button } from "../ui/button";
@@ -30,33 +31,25 @@ export function ScoreEntryPage() {
     addScore,
     updateScore,
     approveScore,
+    loadScoresFromAPI,
     currentTerm,
     currentAcademicYear,
-    subjectAssignments
+    subjectAssignments,
+    addNotification
   } = useSchool();
 
   const [selectedClassId, setSelectedClassId] = useState<string>("");
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>("");
   const [scoresData, setScoresData] = useState<Record<number, { ca1: string; ca2: string; exam: string }>>({});
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
-  const [viewMode, setViewMode] = useState<'enter' | 'rejected'>('enter');
-  const [showRejectedOnly, setShowRejectedOnly] = useState<boolean>(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<string>('');
+  const [lastSavedData, setLastSavedData] = useState<Record<number, { ca1: string; ca2: string; exam: string }>>({});
+  const [selectedTerm, setSelectedTerm] = useState<string>(currentTerm);
+  const [selectedYear, setSelectedYear] = useState<string>(currentAcademicYear);
 
   // Get current teacher
   const currentTeacher = currentUser ? teachers.find(t => t.id === currentUser.linked_id) : null;
   const teacherAssignments = currentTeacher ? getTeacherAssignments(currentTeacher.id) : [];
-  
-  // Debug logging
-  useEffect(() => {
-    console.log('Score Entry Debug Info:', {
-      currentUser: currentUser?.username,
-      currentTeacher: currentTeacher ? `${currentTeacher.firstName} ${currentTeacher.lastName}` : 'Not found',
-      teacherId: currentTeacher?.id,
-      totalAssignments: teacherAssignments.length,
-      currentTerm,
-      currentAcademicYear
-    });
-  }, [currentUser, currentTeacher, teacherAssignments, currentTerm, currentAcademicYear]);
 
     
   // For Score Entry, we only want classes where teacher has subject assignments
@@ -129,55 +122,153 @@ export function ScoreEntryPage() {
       });
   }, [selectedClassId, students]);
 
-  // Get existing scores
+  // Filter existing scores based on current selection
   const existingScores = useMemo(() => {
-    if (!selectedSubjectId || !selectedClassId) return [];
+    if (!selectedSubjectId || !selectedClassId || !teacherAssignments.length) return [];
+    
     const assignment = teacherAssignments.find(
       a => a.subject_id === Number(selectedSubjectId) && a.class_id === Number(selectedClassId)
     );
+    
     if (!assignment) return [];
     
     const filteredScores = scores.filter(s => 
       s.subject_assignment_id === assignment.id &&
-      s.term === currentTerm &&
-      s.academic_year === currentAcademicYear
+      s.term === selectedTerm &&
+      s.academic_year === selectedYear
     );
     
-    // If in rejected mode, only show rejected scores
-    const displayScores = viewMode === 'rejected' 
-      ? filteredScores.filter(s => s.status === 'Rejected')
-      : filteredScores;
-    
-    console.log('Existing scores found:', {
-      assignmentId: assignment.id,
-      selectedSubjectId,
-      selectedClassId,
-      currentTerm,
-      currentAcademicYear,
-      viewMode,
-      totalScores: scores.length,
-      filteredScores: filteredScores.length,
-      displayScores: displayScores.length,
-      scores: displayScores
-    });
-    
-    return displayScores;
-  }, [selectedSubjectId, selectedClassId, teacherAssignments, scores, currentTerm, currentAcademicYear, viewMode]);
+    // Show all scores
+    return filteredScores.map(score => ({
+      ...score,
+      student: students.find(s => s.id === score.student_id)
+    }));
+  }, [selectedSubjectId, selectedClassId, teacherAssignments, scores, selectedTerm, selectedYear]);
 
-  // Load existing scores into form when switching to rejected mode
+  // Auto-enable edit mode when there are rejected scores
   useEffect(() => {
-    if (viewMode === 'rejected' && existingScores.length > 0) {
-      const loadedScores: Record<number, { ca1: string; ca2: string; exam: string }> = {};
-      existingScores.forEach(score => {
-        loadedScores[score.student_id] = {
-          ca1: score.ca1.toString(),
-          ca2: score.ca2.toString(),
-          exam: score.exam.toString()
-        };
-      });
-      setScoresData(loadedScores);
+    const hasRejectedScores = existingScores.some(s => s.status === 'Rejected');
+    if (hasRejectedScores && !isEditMode) {
+      setIsEditMode(true);
+      toast.info("Edit mode enabled. Some scores were rejected and need correction.");
     }
-  }, [viewMode, existingScores]);
+    
+    // Load rejected scores into form for editing
+    if (hasRejectedScores) {
+      const loadedScores: Record<number, { ca1: string; ca2: string; exam: string }> = {};
+      existingScores.forEach((score: any) => {
+        if (score.status === 'Rejected') {
+          loadedScores[score.student_id] = {
+            ca1: score.ca1.toString(),
+            ca2: score.ca2.toString(),
+            exam: score.exam.toString()
+          };
+        }
+      });
+      setScoresData(prev => ({ ...prev, ...loadedScores }));
+    }
+  }, [existingScores, isEditMode]);
+
+  // Auto-save functionality
+  const autoSaveScores = useCallback(async () => {
+    if (!selectedClassId || !selectedSubjectId || !currentTeacher) {
+      return;
+    }
+
+    // Check if data has changed since last save
+    const dataChanged = JSON.stringify(scoresData) !== JSON.stringify(lastSavedData);
+    if (!dataChanged) {
+      return;
+    }
+
+    const assignment = teacherAssignments.find(
+      a => a.subject_id === Number(selectedSubjectId) && a.class_id === Number(selectedClassId)
+    );
+
+    if (!assignment) {
+      return;
+    }
+
+    // Only save non-empty scores as drafts
+    const draftScores: Record<number, { ca1: string; ca2: string; exam: string }> = {};
+    let hasValidScores = false;
+
+    Object.entries(scoresData).forEach(([studentId, data]) => {
+      if (data.ca1 || data.ca2 || data.exam) {
+        draftScores[Number(studentId)] = data;
+        hasValidScores = true;
+      }
+    });
+
+    if (!hasValidScores) {
+      return;
+    }
+
+    try {
+      setAutoSaveStatus('Saving...');
+      
+      // Save each score as draft
+      const savePromises: Promise<number | void>[] = [];
+      
+      Object.entries(draftScores).forEach(([studentId, data]: [string, any]) => {
+        const studentIdNum = Number(studentId);
+        const existingScore = existingScores.find((s: any) => s.student_id === studentIdNum);
+        
+        // Only save if it's a new score or existing draft
+        if (!existingScore || existingScore.status === 'Draft') {
+          const totalScore = parseFloat(calculateScore(data.ca1, data.ca2, data.exam).total) || 0;
+          const grade = getGrade(totalScore);
+          const remark = getRemark(totalScore);
+          
+          const scoreData = {
+            student_id: studentIdNum,
+            subject_assignment_id: assignment.id,
+            subject_name: assignment.subject_name,
+            ca1: parseFloat(data.ca1) || 0,
+            ca2: parseFloat(data.ca2) || 0,
+            exam: parseFloat(data.exam) || 0,
+            total: totalScore,
+            class_average: 0, // Will be calculated on submission
+            class_min: 0, // Will be calculated on submission
+            class_max: 0, // Will be calculated on submission
+            grade,
+            remark,
+            subject_teacher: currentTeacher ? `${currentTeacher.firstName} ${currentTeacher.lastName}` : 'Unknown',
+            entered_by: currentUser?.id || 0,
+            entered_date: new Date().toISOString(),
+            term: selectedTerm as 'First Term' | 'Second Term' | 'Third Term',
+            academic_year: selectedYear,
+            status: 'Draft' as const
+          };
+
+          if (existingScore) {
+            savePromises.push(updateScore(existingScore.id, scoreData));
+          } else {
+            savePromises.push(addScore(scoreData));
+          }
+        }
+      });
+
+      await Promise.all(savePromises);
+      setLastSavedData({ ...scoresData });
+      setAutoSaveStatus('All changes saved');
+      
+      // Clear status after 2 seconds
+      setTimeout(() => setAutoSaveStatus(''), 2000);
+    } catch (error) {
+      setAutoSaveStatus('Auto-save failed');
+      setTimeout(() => setAutoSaveStatus(''), 3000);
+    }
+  }, [scoresData, lastSavedData, selectedClassId, selectedSubjectId, selectedTerm, selectedYear, currentTeacher, teacherAssignments, existingScores, viewMode, currentUser]);
+
+  // Auto-save on data change with debounce
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      autoSaveScores();
+    }, 3000); // Auto-save after 3 seconds of inactivity
+
+    return () => clearTimeout(timeoutId);
+  }, [autoSaveScores]);
 
   // Get class and subject details
   const selectedClass = classes.find(c => c.id === Number(selectedClassId));
@@ -217,7 +308,18 @@ export function ScoreEntryPage() {
   }, [scoresData, classStudents]);
 
   // Check if locked - only lock if results have been submitted and not in edit mode
-  const isLocked = existingScores.length > 0 && existingScores[0]?.status === 'Submitted' && !isEditMode;
+  const isLocked = useMemo(() => {
+    if (isEditMode) return false; // Allow editing in edit mode
+    
+    // Check if there are any submitted scores for this assignment, term, and year
+    const submittedScores = existingScores.filter(s => s.status === 'Submitted');
+    return submittedScores.length > 0;
+  }, [existingScores, isEditMode]);
+
+  // Check if there are any submitted scores to show status
+  const hasSubmittedScores = useMemo(() => {
+    return existingScores.some(s => s.status === 'Submitted');
+  }, [existingScores]);
 
   // Initialize scores data when component loads or selection changes
   useEffect(() => {
@@ -233,15 +335,10 @@ export function ScoreEntryPage() {
     setScoresData(initialData);
     // Reset edit mode when selection changes
     setIsEditMode(false);
-  }, [selectedClassId, selectedSubjectId]);
+  }, [selectedClassId, selectedSubjectId, selectedTerm, selectedYear]);
 
   // Load existing scores when they change (but don't overwrite user input)
   useEffect(() => {
-    console.log('Loading existing scores:', {
-      existingScoresCount: existingScores.length,
-      existingScores
-    });
-    
     if (existingScores.length > 0) {
       setScoresData(prev => {
         const updated = { ...prev };
@@ -258,6 +355,20 @@ export function ScoreEntryPage() {
       });
     }
   }, [existingScores]); // Trigger when existingScores array changes
+
+  // Debug: Force reload scores when component mounts
+  useEffect(() => {
+    console.log('ScoreEntryPage mounted, reloading scores from database...');
+    // This will trigger the existingScores to update
+    const reloadScores = async () => {
+      try {
+        await loadScoresFromAPI();
+      } catch (error) {
+        console.error('Failed to reload scores:', error);
+      }
+    };
+    reloadScores();
+  }, []); // Only run once on mount
 
   // Handle score input change
   const handleScoreChange = (studentId: number, field: 'ca1' | 'ca2' | 'exam', value: string) => {
@@ -401,6 +512,8 @@ export function ScoreEntryPage() {
         subject_teacher: currentTeacher ? `${currentTeacher.firstName} ${currentTeacher.lastName}` : 'Unknown',
         entered_by: currentUser?.id || 0,
         entered_date: new Date().toISOString(),
+        term: selectedTerm as 'First Term' | 'Second Term' | 'Third Term',
+        academic_year: selectedYear,
         status: isEditMode ? 'Submitted' : 'Submitted' as const
       };
 
@@ -425,23 +538,32 @@ export function ScoreEntryPage() {
         toast.success(`Scores submitted successfully! ${savedCount} student(s) recorded.`);
       }
 
-      // Create notification
-      if (isEditMode) {
-        // Don't create notification for edited scores
-        console.log('Edit mode - no notification created');
-      } else {
-        console.log('Creating notification for class teacher...');
-        // Create notification for class teacher to review submitted scores
-        const classInfo = classes.find(c => c.id === Number(selectedClassId));
-        if (classInfo?.classTeacherId) {
-          const classTeacher = teachers.find(t => t.id === classInfo.classTeacherId);
-          if (classTeacher) {
-            console.log('Found class teacher:', classTeacher.firstName, classTeacher.lastName);
-            // Here you would create a notification for the class teacher
-            // For now, we'll just log it
-            toast.info(`Notification sent to ${classTeacher.firstName} ${classTeacher.lastName} for review`);
-          }
+      // Create notification for class teacher
+      console.log('Creating notification for class teacher...');
+      const classInfo = classes.find(c => c.id === Number(selectedClassId));
+      if (classInfo?.classTeacherId) {
+        const classTeacher = teachers.find(t => t.id === classInfo.classTeacherId);
+        if (classTeacher) {
+          console.log('Found class teacher:', classTeacher.firstName, classTeacher.lastName);
+          
+          // Create notification for class teacher to review submitted scores
+          await addNotification({
+            title: `Scores Submitted for Review - ${assignment.subject_name}`,
+            message: `${currentTeacher.firstName} ${currentTeacher.lastName} has submitted scores for ${selectedClass?.name} - ${assignment.subject_name}. Please review and approve or reject.`,
+            type: "info",
+            targetAudience: "teachers",
+            sentBy: currentUser?.id || 0,
+            sentDate: new Date().toISOString(),
+            isRead: false,
+            readBy: []
+          });
+          
+          toast.success(`Scores submitted! ${classTeacher.firstName} ${classTeacher.lastName} notified for review.`);
+        } else {
+          toast.success(`Scores submitted! ${savedCount} student(s) recorded.`);
         }
+      } else {
+        toast.success(`Scores submitted! ${savedCount} student(s) recorded.`);
       }
     } catch (error: unknown) {
       console.error('Error saving scores:', error);
@@ -568,8 +690,8 @@ export function ScoreEntryPage() {
       });
       setScoresData(newScoresData);
       
-      // Switch back to enter mode
-      setViewMode('enter');
+      // Switch back to normal mode after resubmission
+      setIsEditMode(false);
     } catch (error: unknown) {
       console.error('Error resubmitting scores:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -670,28 +792,7 @@ export function ScoreEntryPage() {
             </p>
           </div>
           
-          {/* Mode Switcher */}
-          <div className="flex gap-2 bg-white p-1 rounded-lg border border-gray-200">
-            <Button
-              variant={viewMode === 'enter' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('enter')}
-              className={viewMode === 'enter' ? 'bg-blue-600 text-white' : 'text-gray-600'}
-            >
-              <Edit3 className="w-4 h-4 mr-2" />
-              Enter Scores
-            </Button>
-            <Button
-              variant={viewMode === 'rejected' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('rejected')}
-              className={viewMode === 'rejected' ? 'bg-red-600 text-white' : 'text-gray-600'}
-            >
-              <AlertCircle className="w-4 h-4 mr-2" />
-              Rejected Scores
-            </Button>
-          </div>
-          
+                    
           <div className="flex gap-3">
             <Button
               onClick={handleExportExcel}
@@ -722,33 +823,14 @@ export function ScoreEntryPage() {
               </Button>
             </div>
 
-            <Button
-              onClick={handleSubmit}
-              className="bg-[#6366F1] hover:bg-[#4F46E5] text-white rounded-lg"
-              disabled={isLocked || !selectedClassId || !selectedSubjectId}
-            >
-              <CheckSquare className="w-4 h-4 mr-2" />
-              {isEditMode ? 'Update Scores' : 'Process Result'}
-            </Button>
-
-            {/* Show Edit Scores button when scores are submitted and not in edit mode */}
-            {existingScores.length > 0 && existingScores[0]?.status === 'Submitted' && !isEditMode && (
-              <Button
-                onClick={toggleEditMode}
-                className="bg-[#F59E0B] hover:bg-[#D97706] text-white rounded-lg"
-              >
-                <Edit3 className="w-4 h-4 mr-2" />
-                Edit Scores
-              </Button>
-            )}
-          </div>
+                      </div>
         </div>
       </div>
 
       {/* Selection Section */}
       <Card className="mb-6 rounded-xl bg-white border border-[#E5E7EB]">
         <CardContent className="p-6">
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-4 gap-4">
             <div>
               <Label className="text-[#1F2937] mb-2 block">Select Class</Label>
               <Select value={selectedClassId} onValueChange={(value: string) => {
@@ -787,6 +869,38 @@ export function ScoreEntryPage() {
                 </SelectContent>
               </Select>
             </div>
+
+            <div>
+              <Label className="text-[#1F2937] mb-2 block">Select Term</Label>
+              <Select value={selectedTerm} onValueChange={setSelectedTerm}>
+                <SelectTrigger className="rounded-lg border-[#E5E7EB]">
+                  <SelectValue placeholder="Choose term" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="First Term">First Term</SelectItem>
+                  <SelectItem value="Second Term">Second Term</SelectItem>
+                  <SelectItem value="Third Term">Third Term</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-[#1F2937] mb-2 block">Academic Year</Label>
+              <Select value={selectedYear} onValueChange={setSelectedYear}>
+                <SelectTrigger className="rounded-lg border-[#E5E7EB]">
+                  <SelectValue placeholder="Choose year" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="2023/2024">2023/2024</SelectItem>
+                  <SelectItem value="2024/2025">2024/2025</SelectItem>
+                  <SelectItem value="2025/2026">2025/2026</SelectItem>
+                  <SelectItem value="2026/2027">2026/2027</SelectItem>
+                  <SelectItem value="2027/2028">2027/2028</SelectItem>
+                  <SelectItem value="2028/2029">2028/2029</SelectItem>
+                  <SelectItem value="2029/2030">2029/2030</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -801,7 +915,7 @@ export function ScoreEntryPage() {
                   <span className="text-white text-2xl font-bold">GRA</span>
                 </div>
                 <h1 className="text-[#1F2937] mb-1">Graceland Royal Academy</h1>
-                <p className="text-[#6B7280] text-sm">Student's Assessment Score - {currentTerm.toUpperCase()} - {currentAcademicYear}</p>
+                <p className="text-[#6B7280] text-sm">Student's Assessment Score - {selectedTerm.toUpperCase()} - {selectedYear}</p>
               </div>
             </div>
 
@@ -841,11 +955,37 @@ export function ScoreEntryPage() {
                 <p className="text-sm text-[#1F2937]">{currentTeacher ? `${currentTeacher.firstName || ''} ${currentTeacher.lastName || ''}`.toUpperCase() : 'TEACHER'}</p>
               </div>
             </div>
+
+            {/* Auto-save Status */}
+            {autoSaveStatus && (
+              <div className="mt-4 flex items-center justify-center">
+                <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+                  autoSaveStatus === 'All changes saved' 
+                    ? 'bg-green-100 text-green-700' 
+                    : autoSaveStatus === 'Saving...'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-red-100 text-red-700'
+                }`}>
+                  <Clock className="w-4 h-4" />
+                  {autoSaveStatus}
+                </div>
+              </div>
+            )}
+
+            {/* Freeze Status Indicator */}
+            {hasSubmittedScores && (
+              <div className="mt-4 flex items-center justify-center">
+                <div className="flex items-center gap-2 px-3 py-1 rounded-full text-sm bg-amber-100 text-amber-700">
+                  <AlertCircle className="w-4 h-4" />
+                  Scores are frozen - submitted for review
+                </div>
+              </div>
+            )}
           </CardHeader>
 
           <CardContent className="p-0">
             {/* Rejected Scores Alert */}
-            {viewMode === 'rejected' && existingScores.length > 0 && (
+            {existingScores.some(s => s.status === 'Rejected') && (
               <div className="bg-red-50 border-l-4 border-red-400 p-4 m-4">
                 <div className="flex">
                   <div className="flex-shrink-0">
@@ -856,12 +996,12 @@ export function ScoreEntryPage() {
                       Rejected Scores Found
                     </h3>
                     <div className="mt-2 text-sm text-red-700">
-                      <p>You have {existingScores.length} rejected score(s) that need correction. Make the necessary changes and click "Resubmit Corrected Scores".</p>
-                      {existingScores.map(score => (
+                      <p>You have {existingScores.filter(s => s.status === 'Rejected').length} rejected score(s) that need correction. Make the necessary changes and click "Resubmit Corrected Scores".</p>
+                      {existingScores.filter(s => s.status === 'Rejected').map(score => (
                         <div key={score.id} className="mt-2 p-2 bg-white rounded border border-red-200">
                           <p className="font-medium">{students.find(s => s.id === score.student_id)?.firstName} {students.find(s => s.id === score.student_id)?.lastName}</p>
                           {score.rejection_reason && (
-                            <p className="text-xs text-red-600 mt-1">Reason: {score.rejection_reason}</p>
+                            <p className="text-xs text-gray-600 mt-1">Reason: {score.rejection_reason}</p>
                           )}
                         </div>
                       ))}
@@ -909,6 +1049,10 @@ export function ScoreEntryPage() {
                     const data = scoresData[student.id] || { ca1: '', ca2: '', exam: '' };
                     const { total } = calculateScore(data.ca1, data.ca2, data.exam);
                     const hasScore = data.ca1 || data.ca2 || data.exam;
+                    
+                    // Check if this specific student's score is submitted (and not in edit mode)
+                    const studentScore = existingScores.find(s => s.student_id === student.id);
+                    const isStudentLocked = studentScore?.status === 'Submitted' && !isEditMode;
 
                     return (
                       <tr key={student.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB]">
@@ -925,7 +1069,7 @@ export function ScoreEntryPage() {
                             value={data.ca1}
                             onChange={(e) => handleScoreChange(student.id, 'ca1', e.target.value)}
                             className="w-20 mx-auto text-center rounded-lg border-[#E5E7EB] text-sm"
-                            disabled={isLocked}
+                            disabled={isStudentLocked}
                             placeholder="0"
                           />
                         </td>
@@ -937,7 +1081,7 @@ export function ScoreEntryPage() {
                             value={data.ca2}
                             onChange={(e) => handleScoreChange(student.id, 'ca2', e.target.value)}
                             className="w-20 mx-auto text-center rounded-lg border-[#E5E7EB] text-sm"
-                            disabled={isLocked}
+                            disabled={isStudentLocked}
                             placeholder="0"
                           />
                         </td>
@@ -949,7 +1093,7 @@ export function ScoreEntryPage() {
                             value={data.exam}
                             onChange={(e) => handleScoreChange(student.id, 'exam', e.target.value)}
                             className="w-20 mx-auto text-center rounded-lg border-[#E5E7EB] text-sm"
-                            disabled={isLocked}
+                            disabled={isStudentLocked}
                             placeholder="0"
                           />
                         </td>
@@ -981,16 +1125,15 @@ export function ScoreEntryPage() {
                 variant="outline"
                 className="rounded-lg border-[#E5E7EB] text-[#6B7280]"
                 onClick={() => {
-                  setSelectedClassId("");
-                  setSelectedSubjectId("");
+                  // Reset form
                   setScoresData({});
-                  setViewMode('enter');
+                  setIsEditMode(false);
                 }}
               >
                 Cancel
               </Button>
               
-              {viewMode === 'rejected' ? (
+              {existingScores.some(s => s.status === 'Rejected') ? (
                 <Button
                   onClick={handleResubmit}
                   className="bg-orange-600 hover:bg-orange-700 text-white rounded-lg"

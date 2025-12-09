@@ -3,7 +3,7 @@ import { useSchool } from '../../contexts/SchoolContext';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Calendar, Clock, Plus, Edit2, Trash2, Download } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export function ExamTimetablePage() {
   const {
@@ -26,6 +26,7 @@ export function ExamTimetablePage() {
   const [formData, setFormData] = useState({
     classId: 0,
     subjectId: 0,
+    examType: 'Exam' as 'CA1' | 'CA2' | 'Exam' | 'Practical',
     examDate: '',
     startTime: '',
     endTime: '',
@@ -45,7 +46,7 @@ export function ExamTimetablePage() {
   };
 
   const handleSubmit = () => {
-    if (!formData.classId || !formData.subjectId || !formData.examDate || !formData.startTime || !formData.endTime) {
+    if (!formData.classId || !formData.subjectId || !formData.examType || !formData.examDate || !formData.startTime || !formData.endTime) {
       toast.error('Please fill all required fields');
       return;
     }
@@ -66,20 +67,22 @@ export function ExamTimetablePage() {
     }
 
     const timetableData = {
-      classId: formData.classId,
-      className: selectedClass.name,
-      subjectId: formData.subjectId,
-      subjectName: selectedSubject.name,
-      examDate: formData.examDate,
-      startTime: formData.startTime,
-      endTime: formData.endTime,
-      duration,
-      venue: formData.venue,
+      class_id: formData.classId,
+      class_name: selectedClass.name,
+      subject_id: formData.subjectId,
+      subject_name: selectedSubject.name,
+      exam_type: formData.examType,
+      exam_date: formData.examDate,
+      start_time: formData.startTime,
+      end_time: formData.endTime,
+      duration_minutes: duration,
+      venue: formData.venue || undefined,
+      supervisor_id: undefined,
       term: currentTerm,
-      academicYear: currentAcademicYear,
-      instructions: formData.instructions,
-      createdBy: currentUser?.id || 0,
-      createdDate: new Date().toISOString(),
+      academic_year: currentAcademicYear,
+      instructions: formData.instructions || undefined,
+      created_by: currentUser?.id || undefined,
+      created_at: new Date().toISOString(),
     };
 
     if (editingId) {
@@ -97,6 +100,7 @@ export function ExamTimetablePage() {
     setFormData({
       classId: 0,
       subjectId: 0,
+      examType: 'Exam' as 'CA1' | 'CA2' | 'Exam' | 'Practical',
       examDate: '',
       startTime: '',
       endTime: '',
@@ -109,12 +113,13 @@ export function ExamTimetablePage() {
 
   const handleEdit = (timetable: any) => {
     setFormData({
-      classId: timetable.classId,
-      subjectId: timetable.subjectId,
-      examDate: timetable.examDate,
-      startTime: timetable.startTime,
-      endTime: timetable.endTime,
-      venue: timetable.venue,
+      classId: timetable.class_id,
+      subjectId: timetable.subject_id,
+      examType: timetable.exam_type,
+      examDate: timetable.exam_date,
+      startTime: timetable.start_time,
+      endTime: timetable.end_time,
+      venue: timetable.venue || '',
       instructions: timetable.instructions || '',
     });
     setEditingId(timetable.id);
@@ -133,11 +138,11 @@ export function ExamTimetablePage() {
   };
 
   const filteredTimetables = selectedClassId === 0
-    ? examTimetables.filter(t => t.term === currentTerm && t.academicYear === currentAcademicYear)
-    : examTimetables.filter(t => t.classId === selectedClassId && t.term === currentTerm && t.academicYear === currentAcademicYear);
+    ? examTimetables.filter(t => t.term === currentTerm && t.academic_year === currentAcademicYear)
+    : examTimetables.filter(t => t.class_id === selectedClassId && t.term === currentTerm && t.academic_year === currentAcademicYear);
 
   const groupedTimetables = filteredTimetables.reduce((acc, timetable) => {
-    const className = timetable.className;
+    const className = timetable.class_name || 'Unknown Class';
     if (!acc[className]) {
       acc[className] = [];
     }
@@ -148,10 +153,10 @@ export function ExamTimetablePage() {
   // Sort by date and time
   Object.keys(groupedTimetables).forEach(className => {
     groupedTimetables[className].sort((a, b) => {
-      if (a.examDate !== b.examDate) {
-        return a.examDate.localeCompare(b.examDate);
+      if (a.exam_date !== b.exam_date) {
+        return a.exam_date.localeCompare(b.exam_date);
       }
-      return a.startTime.localeCompare(b.startTime);
+      return a.start_time.localeCompare(b.start_time);
     });
   });
 
@@ -207,6 +212,21 @@ export function ExamTimetablePage() {
                 {subjects.filter(s => s.status === 'Active').map(sub => (
                   <option key={sub.id} value={sub.id}>{sub.name}</option>
                 ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block mb-2 text-slate-700 text-sm">Exam Type <span className="text-red-500">*</span></label>
+              <select
+                name="examType"
+                value={formData.examType}
+                onChange={handleInputChange}
+                className="w-full p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="CA1">CA1</option>
+                <option value="CA2">CA2</option>
+                <option value="Exam">Main Exam</option>
+                <option value="Practical">Practical</option>
               </select>
             </div>
 
@@ -329,16 +349,19 @@ export function ExamTimetablePage() {
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
-                          <h4 className="text-slate-900">{timetable.subjectName}</h4>
+                          <h4 className="text-slate-900">{timetable.subject_name}</h4>
+                          <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
+                            {timetable.exam_type}
+                          </span>
                           <span className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
-                            {timetable.duration} mins
+                            {timetable.duration_minutes} mins
                           </span>
                         </div>
                         
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                           <div className="flex items-center gap-2 text-slate-600">
                             <Calendar className="w-4 h-4" />
-                            {new Date(timetable.examDate).toLocaleDateString('en-US', {
+                            {new Date(timetable.exam_date).toLocaleDateString('en-US', {
                               weekday: 'short',
                               month: 'short',
                               day: 'numeric',
@@ -347,7 +370,7 @@ export function ExamTimetablePage() {
                           </div>
                           <div className="flex items-center gap-2 text-slate-600">
                             <Clock className="w-4 h-4" />
-                            {timetable.startTime} - {timetable.endTime}
+                            {timetable.start_time} - {timetable.end_time}
                           </div>
                           <div className="text-slate-600">
                             📍 {timetable.venue}

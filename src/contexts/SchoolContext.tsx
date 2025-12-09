@@ -331,6 +331,8 @@ export interface Accountant {
   phone: string;
   department?: string;
   status: 'Active' | 'Inactive';
+  created_at: string; // matches database
+  updated_at: string; // matches database
 }
 
 export interface Notification {
@@ -374,19 +376,22 @@ export interface Attendance {
 export interface ExamTimetable {
   id: number;
   class_id: number;
-  class_name: string;
+  class_name?: string;
   subject_id: number;
-  subject_name: string;
+  subject_name?: string;
+  exam_type: 'CA1' | 'CA2' | 'Exam' | 'Practical';
   exam_date: string;
   start_time: string;
   end_time: string;
-  duration: number; // in minutes
-  venue: string;
+  duration_minutes: number;
+  venue?: string;
+  supervisor_id?: number;
   term: string;
   academic_year: string;
   instructions?: string;
-  created_by: number;
-  created_date: string;
+  created_by?: number;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ClassTimetable {
@@ -455,6 +460,14 @@ export interface SchoolSettings {
   school_logo_url?: string;
   principal_name: string;
   principal_signature?: string;
+  head_teacher_name?: string;
+  head_teacher_signature?: string;
+  principal_comment?: string;
+  head_teacher_comment?: string;
+  resumption_date?: string;
+  school_address?: string;
+  school_phone?: string;
+  school_email?: string;
 }
 
 export interface BankAccountSettings {
@@ -509,11 +522,18 @@ interface SchoolContextType {
   bankAccountSettings: BankAccountSettings | null;
   
   // System Settings Methods
+  loadCurrentTermAndYear: () => Promise<void>;
+  loadSchoolSettings: () => Promise<void>;
+  getAllAcademicYears: () => Promise<string[]>;
+  getCompiledResultsByYearAndTerm: (academicYear: string, term: string) => Promise<CompiledResult[]>;
   updateCurrentTerm: (term: string) => Promise<void>;
   updateCurrentAcademicYear: (year: string) => Promise<void>;
   updateSchoolSettings: (settings: Partial<SchoolSettings>) => Promise<void>;
   updateBankAccountSettings: (settings: Omit<BankAccountSettings, 'id' | 'updated_date'>) => void;
   getBankAccountSettings: () => BankAccountSettings | null;
+  updateAttendanceRequirements: (requirements: Record<string, number>) => Promise<void>;
+  getAttendanceRequirements: () => Record<string, number>;
+  loadAttendanceRequirements: () => Promise<void>;
 
   // Student Methods
   addStudent: (student: Omit<Student, 'id'>) => Promise<number>;
@@ -900,14 +920,18 @@ export function useSchool() {
 // ==================== PROVIDER ====================
 
 export function SchoolProvider({ children }: { children: ReactNode }) {
-  const [currentTerm, setCurrentTerm] = useState('First Term');
-  const [currentAcademicYear, setCurrentAcademicYear] = useState('2025/2026');
+  const [currentTerm, setCurrentTerm] = useState('');
+  const [currentAcademicYear, setCurrentAcademicYear] = useState('');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   
   const [schoolSettings, setSchoolSettings] = useState<SchoolSettings>({
-    school_name: 'Graceland Royal Academy Gombe',
-    school_motto: 'Wisdom & Illumination',
-    principal_name: 'Mrs. Grace Okoro',
+    school_name: '',
+    school_motto: '',
+    principal_name: '',
+    head_teacher_name: '',
+    principal_comment: '',
+    head_teacher_comment: '',
+    resumption_date: ''
   });
 
   const [bankAccountSettings, setBankAccountSettings] = useState<BankAccountSettings | null>(null);
@@ -932,6 +956,7 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [attendances, setAttendances] = useState<Attendance[]>([]);
+  const [attendanceRequirements, setAttendanceRequirements] = useState<Record<string, number>>({});
 
   // Initialize with empty arrays - all data loaded from database
   const [users, setUsers] = useState<User[]>([]);
@@ -1059,7 +1084,20 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
     try {
       const result = await sqlDatabase.executeQuery('SELECT * FROM accountants ORDER BY created_at DESC');
       if (result && result.data) {
-        setAccountants(result.data);
+        // Transform snake_case to camelCase for frontend compatibility
+        const transformedData = result.data.map((accountant: any) => ({
+          id: accountant.id,
+          firstName: accountant.first_name,
+          lastName: accountant.last_name,
+          employeeId: accountant.employee_id,
+          email: accountant.email,
+          phone: accountant.phone,
+          department: accountant.department,
+          status: accountant.status,
+          created_at: accountant.created_at,
+          updated_at: accountant.updated_at
+        }));
+        setAccountants(transformedData);
         return true;
       }
       return false;
@@ -1557,6 +1595,10 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
         await loadSubjectsFromAPI();
         await loadSubjectRegistrationsFromAPI();
         await loadSubjectAssignmentsFromAPI();
+        await loadPaymentsFromAPI();
+        await loadFeeStructuresFromAPI();
+        await loadStudentFeeBalancesFromAPI();
+        await loadNotificationsFromAPI();
       };
       loadData();
     }
@@ -1564,6 +1606,10 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
 
   // Load initial data on app start (for login page and general use)
   useEffect(() => {
+    // Load system settings first
+    loadCurrentTermAndYear();
+    loadSchoolSettings();
+    loadAttendanceRequirements();
     // Load users immediately for login functionality
     loadUsersFromAPI();
     // Load activity logs for system monitoring
@@ -1612,6 +1658,9 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
         await loadSubjectsFromAPI();
         await loadSubjectRegistrationsFromAPI();
         await loadSubjectAssignmentsFromAPI();
+        await loadPaymentsFromAPI();
+        await loadFeeStructuresFromAPI();
+        await loadStudentFeeBalancesFromAPI();
         
         toast.success(`Welcome back, ${user.firstName || user.username}!`);
         return user;
@@ -2085,26 +2134,172 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
   };
 
   // System Settings Methods
+  const loadCurrentTermAndYear = async () => {
+    try {
+      const termResult = await sqlDatabase.executeQuery(
+        "SELECT setting_value FROM school_settings WHERE setting_key = 'current_term'"
+      );
+      const yearResult = await sqlDatabase.executeQuery(
+        "SELECT setting_value FROM school_settings WHERE setting_key = 'current_academic_year'"
+      );
+      
+      // Extract data from result objects
+      const termData = termResult?.data || termResult;
+      const yearData = yearResult?.data || yearResult;
+      
+      if (termData && termData.length > 0) {
+        setCurrentTerm(termData[0].setting_value);
+      }
+      if (yearData && yearData.length > 0) {
+        setCurrentAcademicYear(yearData[0].setting_value);
+      }
+    } catch (error) {
+      console.error('Error loading current term and year:', error);
+    }
+  };
+
+  const loadSchoolSettings = async () => {
+    try {
+      const result = await sqlDatabase.executeQuery(
+        "SELECT setting_key, setting_value FROM school_settings"
+      );
+      
+      console.log('School settings query result:', result);
+      
+      const newSettings: Partial<SchoolSettings> = {};
+      // Extract the data array from the result object
+      const settings = result?.data || result;
+      
+      if (Array.isArray(settings)) {
+        settings.forEach((setting: any) => {
+          newSettings[setting.setting_key as keyof SchoolSettings] = setting.setting_value;
+        });
+      } else {
+        console.warn('School settings query did not return an array:', typeof settings, settings);
+      }
+      
+      setSchoolSettings(prev => ({ ...prev, ...newSettings }));
+    } catch (error) {
+      console.error('Error loading school settings:', error);
+    }
+  };
+
+  const getAllAcademicYears = async (): Promise<string[]> => {
+    try {
+      const result = await sqlDatabase.executeQuery(
+        "SELECT DISTINCT academic_year FROM compiled_results ORDER BY academic_year DESC"
+      );
+      // Handle database response format: {success: true, data: [...]}
+      let dataArray = [];
+      if (result && typeof result === 'object') {
+        if (Array.isArray(result)) {
+          dataArray = result;
+        } else if (Array.isArray(result.data)) {
+          dataArray = result.data;
+        }
+      }
+      
+      const years = dataArray.map((row: any) => row.academic_year);
+      // Always include current academic year as fallback
+      if (currentAcademicYear && !years.includes(currentAcademicYear)) {
+        years.push(currentAcademicYear);
+      }
+      return years;
+    } catch (error) {
+      console.error('Error getting academic years:', error);
+      // Return current academic year as fallback
+      return currentAcademicYear ? [currentAcademicYear] : [];
+    }
+  };
+
+  const getCompiledResultsByYearAndTerm = async (academicYear: string, term: string): Promise<CompiledResult[]> => {
+    try {
+      const result = await sqlDatabase.executeQuery(
+        "SELECT * FROM compiled_results WHERE academic_year = ? AND term = ? ORDER BY student_id",
+        [academicYear, term]
+      );
+      // Handle database response format: {success: true, data: [...]}
+      if (result && typeof result === 'object') {
+        if (Array.isArray(result)) {
+          return result;
+        } else if (Array.isArray(result.data)) {
+          return result.data;
+        }
+      }
+      return [];
+    } catch (error) {
+      console.error('Error getting compiled results by year and term:', error);
+      return [];
+    }
+  };
+
   const updateCurrentTerm = async (term: string) => {
     setCurrentTerm(term);
-    // Also update database
+    // Update database using INSERT ON DUPLICATE KEY UPDATE
     try {
       await sqlDatabase.executeQuery(
-        "UPDATE school_settings SET setting_value = ? WHERE setting_key = 'current_term'",
-        [term]
+        "INSERT INTO school_settings (setting_key, setting_value) VALUES ('current_term', ?) ON DUPLICATE KEY UPDATE setting_value = ?",
+        [term, term]
       );
     } catch (error) {
       console.error('Error updating current term in database:', error);
     }
   };
 
+  const updateAttendanceRequirements = async (requirements: Record<string, number>) => {
+    setAttendanceRequirements(requirements);
+    // Save to database
+    try {
+      // Save each term's requirement
+      for (const [term, days] of Object.entries(requirements)) {
+        await sqlDatabase.executeQuery(`
+          INSERT INTO school_settings (setting_key, setting_value, updated_date) 
+          VALUES (?, ?, NOW())
+          ON DUPLICATE KEY UPDATE setting_value = ?, updated_date = NOW()
+        `, [`attendance_${term.toLowerCase().replace(' ', '_')}`, days.toString(), days.toString()]);
+      }
+    } catch (error) {
+      console.error('Error updating attendance requirements in database:', error);
+    }
+  };
+
+  const getAttendanceRequirements = () => {
+    return attendanceRequirements;
+  };
+
+  const loadAttendanceRequirements = async () => {
+    try {
+      const terms = ['first_term', 'second_term', 'third_term'];
+      const requirements: Record<string, number> = {};
+      
+      for (const term of terms) {
+        const result = await sqlDatabase.executeQuery(
+          "SELECT setting_value FROM school_settings WHERE setting_key = ?",
+          [`attendance_${term}`]
+        );
+        
+        if (result.length > 0) {
+          const termName = term.split('_').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1)
+          ).join(' ');
+          requirements[termName] = parseInt(result[0].setting_value) || 0;
+        }
+      }
+      
+      setAttendanceRequirements(requirements);
+    } catch (error) {
+      console.error('Error loading attendance requirements from database:', error);
+      setAttendanceRequirements({});
+    }
+  };
+
   const updateCurrentAcademicYear = async (year: string) => {
     setCurrentAcademicYear(year);
-    // Also update database
+    // Update database using INSERT ON DUPLICATE KEY UPDATE
     try {
       await sqlDatabase.executeQuery(
-        "UPDATE school_settings SET setting_value = ? WHERE setting_key = 'current_academic_year'",
-        [year]
+        "INSERT INTO school_settings (setting_key, setting_value) VALUES ('current_academic_year', ?) ON DUPLICATE KEY UPDATE setting_value = ?",
+        [year, year]
       );
     } catch (error) {
       console.error('Error updating academic year in database:', error);
@@ -2138,23 +2333,14 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
     setSchoolSettings({ ...schoolSettings, ...settings });
     // Also update database
     try {
-      if (settings.school_name !== undefined) {
-        await sqlDatabase.executeQuery(
-          "UPDATE school_settings SET setting_value = ? WHERE setting_key = 'school_name'",
-          [settings.school_name]
-        );
-      }
-      if (settings.school_motto !== undefined) {
-        await sqlDatabase.executeQuery(
-          "UPDATE school_settings SET setting_value = ? WHERE setting_key = 'school_motto'",
-          [settings.school_motto]
-        );
-      }
-      if (settings.principal_name !== undefined) {
-        await sqlDatabase.executeQuery(
-          "UPDATE school_settings SET setting_value = ? WHERE setting_key = 'principal_name'",
-          [settings.principal_name]
-        );
+      const settingEntries = Object.entries(settings);
+      for (const [key, value] of settingEntries) {
+        if (value !== undefined) {
+          await sqlDatabase.executeQuery(
+            `UPDATE school_settings SET setting_value = ?, updated_date = NOW() WHERE setting_key = ?`,
+            [value, key]
+          );
+        }
       }
     } catch (error) {
       console.error('Error updating school settings in database:', error);
@@ -2465,7 +2651,16 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
   };
 
   const updateCompiledResult = async (id: number, resultData: any): Promise<void> => {
-    setCompiledResults(compiledResults.map((r: any) => (r.id === id ? { ...r, ...resultData } : r)));
+    try {
+      // Update database
+      await sqlDatabase.updateRecord('compiled_results', id, resultData);
+      
+      // Update local state
+      setCompiledResults(compiledResults.map((r: any) => (r.id === id ? { ...r, ...resultData } : r)));
+    } catch (error) {
+      console.error('Error updating compiled result:', error);
+      throw error;
+    }
   };
 
   const deleteCompiledResult = async (id: number): Promise<void> => {
@@ -2512,13 +2707,66 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const rejectResult = async (id: number): Promise<void> => {
+  const rejectResult = async (id: number, reason: string = ''): Promise<void> => {
     try {
+      // Get the compiled result details
+      const result = compiledResults.find((r: any) => r.id === id);
+      if (!result) {
+        throw new Error('Result not found');
+      }
+
       // Update compiled result status to 'Rejected' in database
-      await sqlDatabase.updateCompiledResult(id, { status: 'Rejected' });
+      await sqlDatabase.updateCompiledResult(id, { 
+        status: 'Rejected',
+        rejectionReason: reason
+      });
       
       // Update local state
-      setCompiledResults(compiledResults.map((r: any) => (r.id === id ? { ...r, status: 'Rejected' } : r)));
+      setCompiledResults(compiledResults.map((r: any) => (r.id === id ? { ...r, status: 'Rejected', rejectionReason: reason } : r)));
+
+      // Find and reject all subject scores for this student, class, and term
+      const studentScores = scores.filter((s: any) => 
+        s.student_id === result.student_id &&
+        s.term === result.term &&
+        s.academic_year === result.academic_year &&
+        s.status === 'Approved' // Only reject approved scores, not submitted ones
+      );
+
+      // Update all related scores to 'Rejected' status
+      for (const score of studentScores) {
+        await sqlDatabase.updateRecord('scores', score.id, { 
+          status: 'Rejected',
+          rejectionReason: `Admin rejected compiled result: ${reason}`,
+          rejectedBy: currentUser?.id || null,
+          rejectedDate: new Date().toISOString()
+        });
+        
+        // Update local state
+        setScores(scores.map((s: any) => 
+          s.id === score.id 
+            ? { ...s, status: 'Rejected', rejectionReason: `Admin rejected compiled result: ${reason}` }
+            : s
+        ));
+      }
+
+      // Send notification to class teacher
+      const student = students.find((s: any) => s.id === result.student_id);
+      const studentName = student ? `${student.firstName} ${student.lastName}` : 'Unknown Student';
+      
+      const classTeacher = teachers.find((t: any) => t.id === result.compiled_by);
+      if (classTeacher) {
+        await addNotification({
+          title: "Compiled Result Rejected - Action Required",
+          message: `Admin has rejected the compiled result for ${studentName}. You can now edit attendance, comments, psychomotor skills, and reject subject scores for correction.`,
+          type: "warning",
+          targetAudience: "teachers",
+          sentBy: currentUser?.id || 0,
+          sentDate: new Date().toISOString(),
+          isRead: false,
+          readBy: []
+        });
+      }
+
     } catch (error) {
       console.error('Error rejecting result in database:', error);
       throw error;
@@ -2713,10 +2961,40 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
   };
 
   const addNotification = async (notification: Omit<Notification, 'id'>): Promise<number> => {
-    const newId = notifications.length > 0 ? Math.max(...notifications.map((n: Notification) => n.id)) + 1 : 1;
-    const newNotification = { ...notification, id: newId };
-    setNotifications([...notifications, newNotification]);
-    return newId;
+    try {
+      // Convert to snake_case for database
+      const notificationData = {
+        title: notification.title,
+        message: notification.message,
+        type: notification.type,
+        target_audience: notification.targetAudience,
+        sent_by: notification.sentBy,
+        sent_date: notification.sentDate,
+        is_read: notification.isRead ? 1 : 0,
+        read_by: JSON.stringify(notification.readBy || [])
+      };
+
+      // Insert into database
+      const insertId = await sqlDatabase.insertRecord('notifications', notificationData);
+      
+      // Create notification object for local state
+      const newNotification = { 
+        ...notification, 
+        id: insertId 
+      };
+      
+      // Update local state
+      setNotifications(prev => [...prev, newNotification]);
+      
+      return insertId;
+    } catch (error) {
+      console.error('Error adding notification to database:', error);
+      // Fallback to local state only
+      const newId = notifications.length > 0 ? Math.max(...notifications.map((n: Notification) => n.id)) + 1 : 1;
+      const newNotification = { ...notification, id: newId };
+      setNotifications([...notifications, newNotification]);
+      return newId;
+    }
   };
 
   const markNotificationAsRead = async (id: number): Promise<void> => {
@@ -2990,6 +3268,21 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
     try {
       const result = await sqlDatabase.executeQuery('SELECT * FROM scores ORDER BY student_id, subject_assignment_id');
       if (result && result.data) {
+        console.log('Database scores loaded:', {
+          totalScores: result.data.length,
+          scores: result.data.map((s: any) => ({
+            id: s.id,
+            student_id: s.student_id,
+            subject_assignment_id: s.subject_assignment_id,
+            term: s.term,
+            academic_year: s.academic_year,
+            status: s.status,
+            ca1: s.ca1,
+            ca2: s.ca2,
+            exam: s.exam,
+            total: s.total
+          }))
+        });
         setScores(result.data);
         return true;
       }
@@ -3012,9 +3305,28 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
 
   const loadPaymentsFromAPI = async (): Promise<boolean> => {
     try {
-      const result = await sqlDatabase.executeQuery('SELECT * FROM payments ORDER BY created_at DESC');
+      const result = await sqlDatabase.executeQuery('SELECT * FROM payments ORDER BY recorded_date DESC');
       if (result && result.data) {
-        setPayments(result.data);
+        // Transform snake_case to camelCase for frontend compatibility
+        const transformedData = result.data.map((payment: any) => ({
+          id: payment.id,
+          student_id: payment.student_id,
+          student_name: payment.student_name,
+          amount: payment.amount,
+          payment_type: payment.payment_type,
+          term: payment.term,
+          academic_year: payment.academic_year,
+          payment_method: payment.payment_method,
+          reference: payment.transaction_reference,
+          recorded_by: payment.recorded_by,
+          recorded_date: payment.recorded_date,
+          status: payment.status,
+          receipt_number: payment.receipt_number,
+          verified_by: payment.verified_by,
+          verified_date: payment.verified_date,
+          notes: payment.notes
+        }));
+        setPayments(transformedData);
         return true;
       }
       return false;
@@ -3165,7 +3477,7 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
 
   const loadNotificationsFromAPI = async (): Promise<boolean> => {
     try {
-      const result = await sqlDatabase.executeQuery('SELECT * FROM notifications ORDER BY created_at DESC');
+      const result = await sqlDatabase.executeQuery('SELECT * FROM notifications ORDER BY sent_date DESC');
       if (result && result.data) {
         setNotifications(result.data);
         return true;
@@ -3193,12 +3505,9 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
 
   const loadExamTimetablesFromAPI = async (): Promise<boolean> => {
     try {
-      const result = await sqlDatabase.executeQuery('SELECT * FROM exam_timetables ORDER BY exam_date, class_id');
-      if (result && result.data) {
-        setExamTimetables(result.data);
-        return true;
-      }
-      return false;
+      const result = await sqlDatabase.getExamTimetables();
+      setExamTimetables(result);
+      return true;
     } catch (error) {
       console.error('Error loading exam timetables:', error);
       return false;
@@ -3298,18 +3607,40 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
 
   // Exam Timetable Methods
   const addExamTimetable = async (timetable: Omit<ExamTimetable, 'id'>): Promise<number> => {
-    const newId = examTimetables.length > 0 ? Math.max(...examTimetables.map((t: ExamTimetable) => t.id)) + 1 : 1;
-    const newTimetable = { ...timetable, id: newId };
-    setExamTimetables([...examTimetables, newTimetable]);
-    return newId;
+    try {
+      const timetableData = {
+        ...timetable,
+        createdBy: currentUser?.id || null,
+        academicYear: currentAcademicYear,
+        term: currentTerm
+      };
+      const result = await sqlDatabase.createExamTimetable(timetableData);
+      await loadExamTimetablesFromAPI();
+      return result.id;
+    } catch (error) {
+      console.error('Error adding exam timetable:', error);
+      throw error;
+    }
   };
 
   const updateExamTimetable = async (id: number, timetable: Partial<ExamTimetable>): Promise<void> => {
-    setExamTimetables(examTimetables.map((t: ExamTimetable) => (t.id === id ? { ...t, ...timetable } : t)));
+    try {
+      await sqlDatabase.updateExamTimetable(id, timetable);
+      await loadExamTimetablesFromAPI();
+    } catch (error) {
+      console.error('Error updating exam timetable:', error);
+      throw error;
+    }
   };
 
   const deleteExamTimetable = async (id: number): Promise<void> => {
-    setExamTimetables(examTimetables.filter((t: ExamTimetable) => t.id !== id));
+    try {
+      await sqlDatabase.deleteExamTimetable(id);
+      await loadExamTimetablesFromAPI();
+    } catch (error) {
+      console.error('Error deleting exam timetable:', error);
+      throw error;
+    }
   };
 
   const getExamTimetablesByClass = (classId: number) => {
@@ -3736,6 +4067,7 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
   // Score rejection function for class teachers
   const rejectScore = async (scoreId: number, rejectionReason: string, rejectedBy: number): Promise<void> => {
     try {
+      // Update database with rejection info (after migration)
       await sqlDatabase.updateRecord('scores', scoreId, {
         status: 'Rejected',
         rejection_reason: rejectionReason,
@@ -3744,9 +4076,9 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
       });
 
       // Update local state
-      setScores(scores.map(s => 
+      setScores((scores: any[]) => scores.map((s: any) => 
         s.id === scoreId 
-          ? { ...s, status: 'Rejected', rejection_reason: rejectionReason, rejected_by: rejectedBy, rejected_date: new Date().toISOString() }
+          ? { ...s, status: 'Rejected', rejectionReason, rejectedBy, rejectedDate: new Date().toISOString() }
           : s
       ));
 
@@ -3769,9 +4101,9 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
       });
 
       // Update local state
-      setScores(scores.map(s => 
+      setScores((scores: any[]) => scores.map((s: any) => 
         s.id === scoreId 
-          ? { ...s, status: 'Submitted', rejection_reason: null, rejected_by: null, rejected_date: null }
+          ? { ...s, status: 'Submitted', rejectionReason: undefined, rejectedBy: undefined, rejectedDate: undefined }
           : s
       ));
 
@@ -3785,11 +4117,11 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
 
   // Get pending scores for class teacher review
   const getPendingScores = (classId?: number) => {
-    const pendingScores = scores.filter(s => s.status === 'Submitted');
+    const pendingScores = scores.filter((s: any) => s.status === 'Submitted');
     
     if (classId) {
-      return pendingScores.filter(s => {
-        const assignment = subjectAssignments.find(sa => sa.id === s.subject_assignment_id);
+      return pendingScores.filter((s: any) => {
+        const assignment = subjectAssignments.find((sa: any) => sa.id === s.subject_assignment_id);
         return assignment && assignment.class_id === classId;
       });
     }
@@ -4098,13 +4430,16 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
     getClassTeacher,
     getClassSubjects,
     updateClassStudentCount,
+    loadCurrentTermAndYear,
+    loadSchoolSettings,
+    getAllAcademicYears,
+    getCompiledResultsByYearAndTerm,
     updateCurrentTerm,
     updateCurrentAcademicYear,
     updateSchoolSettings,
-    getTeacherClassTeacherAssignments,
-    validateClassTeacherAssignment,
     updateBankAccountSettings,
     getBankAccountSettings,
+    validateClassTeacherAssignment,
     addActivityLog,
     getActivityLogs,
     promoteStudent,
@@ -4199,6 +4534,7 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
         loadSubjectsFromAPI(),
         loadSubjectRegistrationsFromAPI(),
         loadSubjectAssignmentsFromAPI(),
+        loadPaymentsFromAPI(),
         loadFeeStructuresFromAPI(),
         loadStudentFeeBalancesFromAPI(),
         loadNotificationsFromAPI(),
@@ -4296,6 +4632,9 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
       await loadSubjectsFromAPI();
       await loadSubjectRegistrationsFromAPI();
       await loadSubjectAssignmentsFromAPI();
+      await loadPaymentsFromAPI();
+      await loadFeeStructuresFromAPI();
+      await loadStudentFeeBalancesFromAPI();
     },
     
     // User Management Methods
@@ -4485,6 +4824,11 @@ export function SchoolProvider({ children }: { children: ReactNode }) {
     createPsychomotorDomain: async (psychomotorData: any) => {
       return await sqlDatabase.createPsychomotorDomain(psychomotorData);
     },
+
+    updateAttendanceRequirements,
+    getAttendanceRequirements,
+    loadAttendanceRequirements,
+    getTeacherClassTeacherAssignments,
 
     // User Management Methods
     checkUserPermissionAPI,

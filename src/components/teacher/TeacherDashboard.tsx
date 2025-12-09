@@ -96,6 +96,17 @@ export function TeacherDashboard({ onNavigate }: TeacherDashboardProps) {
       label: "Students"
     },
     {
+      title: "Exam Timetable",
+      description: "View examination schedules",
+      icon: Calendar,
+      color: "from-[#0EA5E9] to-[#0284C7]",
+      bgColor: "bg-gradient-to-br from-[#0EA5E9] to-[#0284C7]",
+      iconBg: "bg-white/20",
+      page: "exam-timetable",
+      count: classTeacherClasses.length,
+      label: "Classes"
+    },
+    {
       title: "Result Management",
       description: "Compile and publish student results",
       icon: FileText,

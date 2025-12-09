@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Calendar, Save, Plus, Edit } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Calendar, Save, Plus, Edit, Users, AlertTriangle, Info } from "lucide-react";
 import { Card, CardContent, CardHeader } from "../ui/card";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -9,7 +9,15 @@ import { useSchool } from "../../contexts/SchoolContext";
 import { toast } from "sonner";
 
 export function TermSettingsPage() {
-  const { currentAcademicYear, currentTerm, updateCurrentTerm, updateCurrentAcademicYear } = useSchool();
+  const { 
+    currentAcademicYear, 
+    currentTerm, 
+    updateCurrentTerm, 
+    updateCurrentAcademicYear,
+    updateAttendanceRequirements,
+    getAttendanceRequirements,
+    loadAttendanceRequirements
+  } = useSchool();
   const [settings, setSettings] = useState({
     academicYear: currentAcademicYear || "2025/2026",
     currentTerm: currentTerm || "First Term",
@@ -18,13 +26,29 @@ export function TermSettingsPage() {
     nextTermStarts: "2026-01-10",
     schoolResumptionDate: "2025-09-01",
     midTermBreakStart: "2025-10-25",
-    midTermBreakEnd: "2025-11-01"
+    midTermBreakEnd: "2025-11-01",
+    // Attendance settings
+    attendanceRequirements: getAttendanceRequirements()
   });
+
+  // Refresh attendance requirements from database when component loads
+  useEffect(() => {
+    loadAttendanceRequirements();
+  }, [loadAttendanceRequirements]);
+
+  // Update local state when attendance requirements change
+  useEffect(() => {
+    setSettings(prev => ({
+      ...prev,
+      attendanceRequirements: getAttendanceRequirements()
+    }));
+  }, [getAttendanceRequirements]);
 
   const handleSave = async () => {
     await updateCurrentAcademicYear(settings.academicYear);
     await updateCurrentTerm(settings.currentTerm);
-    toast.success("Term settings updated successfully!");
+    await updateAttendanceRequirements(settings.attendanceRequirements);
+    toast.success("Term and attendance settings updated successfully!");
   };
 
   const termOptions = ["First Term", "Second Term", "Third Term"];
@@ -35,6 +59,21 @@ export function TermSettingsPage() {
         <h1 className="text-[#1F2937] mb-2">Term & Session Settings</h1>
         <p className="text-[#6B7280]">Configure academic year, term dates and school calendar</p>
       </div>
+
+      {/* System Control Notice */}
+      <Card className="border-amber-200 bg-amber-50">
+        <CardContent className="p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-amber-800 mb-1">System Control Notice</h3>
+              <p className="text-xs text-amber-700">
+                These settings control the entire system. All teachers, students, and other roles will only be able to access and work with the current academic year and term you set here. Only administrators can view and manage historical data.
+              </p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Current Session Info */}
       <Card className="rounded-xl bg-gradient-to-br from-[#3B82F6] to-[#2563EB] border-0 text-white shadow-clinical">
@@ -173,6 +212,54 @@ export function TermSettingsPage() {
                 onChange={(e) => setSettings({ ...settings, schoolResumptionDate: e.target.value })}
                 className="rounded-lg"
               />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Attendance Requirements */}
+        <Card className="rounded-xl bg-white border border-[#E5E7EB] shadow-clinical">
+          <CardHeader className="border-b border-[#E5E7EB] bg-gradient-to-r from-[#10B981] to-[#059669] p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
+                <Users className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h2 className="font-semibold text-white">Attendance Requirements</h2>
+                <p className="text-white/80 text-sm">Set total required attendance days per term</p>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-6 space-y-4">
+            {termOptions.map((term) => (
+              <div key={term} className="flex items-center justify-between p-4 bg-[#F9FAFB] rounded-lg border border-[#E5E7EB]">
+                <div>
+                  <Label className="text-sm font-medium text-[#1F2937]">{term} Required Days</Label>
+                  <p className="text-xs text-[#6B7280]">Total days student must be present</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="1"
+                    max="200"
+                    value={settings.attendanceRequirements[term as keyof typeof settings.attendanceRequirements]}
+                    onChange={(e) => setSettings({
+                      ...settings,
+                      attendanceRequirements: {
+                        ...settings.attendanceRequirements,
+                        [term]: parseInt(e.target.value) || 0
+                      }
+                    })}
+                    className="w-20 text-center rounded-lg"
+                  />
+                  <span className="text-sm text-[#6B7280]">days</span>
+                </div>
+              </div>
+            ))}
+            
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-xs text-blue-800">
+                <strong>Note:</strong> These settings will be used in the Compile Results page to calculate attendance ratios (e.g., 58/60).
+              </p>
             </div>
           </CardContent>
         </Card>

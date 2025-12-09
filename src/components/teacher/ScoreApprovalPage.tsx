@@ -162,6 +162,35 @@ export function ScoreApprovalPage() {
   const handleApproveScore = async (score: ScoreWithDetails) => {
     try {
       await approveScore(score.id, currentUser!.id);
+      
+      // Send notification to subject teacher
+      const subjectAssignment = subjectAssignments.find(sa => sa.id === score.subject_assignment_id);
+      if (subjectAssignment) {
+        const subjectTeacher = teachers.find(t => t.id === subjectAssignment.teacher_id);
+        if (subjectTeacher) {
+          await addNotification({
+            title: "Score Approved",
+            message: `Your score for ${score.student_name} in ${score.subject_name} (${score.class_name}) has been approved.`,
+            type: "success",
+            targetAudience: "teachers",
+            sentBy: currentUser!.id,
+            sentDate: new Date().toISOString(),
+            isRead: false,
+            readBy: []
+          });
+
+          // Real-time notification
+          broadcast({
+            id: Date.now(),
+            title: "Score Approved",
+            message: `Score for ${score.student_name} in ${score.subject_name} has been approved.`,
+            type: "success",
+            targetAudience: "teachers",
+            sentDate: new Date().toISOString(),
+          });
+        }
+      }
+      
       toast.success("Score approved successfully");
     } catch (error) {
       toast.error("Failed to approve score");
