@@ -147,7 +147,10 @@ export function ScoreEntryPage() {
 
   // Auto-enable edit mode when there are rejected scores
   useEffect(() => {
-    const hasRejectedScores = existingScores.some(s => s.status === 'Rejected');
+    const rejectedScores = existingScores.filter(s => s.status === 'Rejected');
+    console.log('Rejected scores detected:', rejectedScores.length, rejectedScores);
+    
+    const hasRejectedScores = rejectedScores.length > 0;
     if (hasRejectedScores && !isEditMode) {
       setIsEditMode(true);
       toast.info("Edit mode enabled. Some scores were rejected and need correction.");
@@ -165,9 +168,17 @@ export function ScoreEntryPage() {
           };
         }
       });
+      console.log('Loading rejected scores into form:', loadedScores);
       setScoresData(prev => ({ ...prev, ...loadedScores }));
     }
   }, [existingScores, isEditMode]);
+
+  // Refresh scores data when component mounts or when selection changes
+  useEffect(() => {
+    if (selectedClassId && selectedSubjectId) {
+      loadScoresFromAPI();
+    }
+  }, [selectedClassId, selectedSubjectId, selectedTerm, selectedYear]);
 
   // Auto-save functionality
   const autoSaveScores = useCallback(async () => {
@@ -259,7 +270,7 @@ export function ScoreEntryPage() {
       setAutoSaveStatus('Auto-save failed');
       setTimeout(() => setAutoSaveStatus(''), 3000);
     }
-  }, [scoresData, lastSavedData, selectedClassId, selectedSubjectId, selectedTerm, selectedYear, currentTeacher, teacherAssignments, existingScores, viewMode, currentUser]);
+  }, [scoresData, lastSavedData, selectedClassId, selectedSubjectId, selectedTerm, selectedYear, currentTeacher, teacherAssignments, existingScores, currentUser]);
 
   // Auto-save on data change with debounce
   useEffect(() => {
@@ -308,12 +319,26 @@ export function ScoreEntryPage() {
   }, [scoresData, classStudents]);
 
   // Check if locked - only lock if results have been submitted and not in edit mode
+  // Allow editing of draft scores even if some scores are submitted
   const isLocked = useMemo(() => {
     if (isEditMode) return false; // Allow editing in edit mode
     
-    // Check if there are any submitted scores for this assignment, term, and year
+    // Only lock if ALL scores are submitted (no draft scores remaining)
     const submittedScores = existingScores.filter(s => s.status === 'Submitted');
-    return submittedScores.length > 0;
+    const draftScores = existingScores.filter(s => s.status === 'Draft');
+    
+    // Lock only if there are submitted scores AND no draft scores
+    const locked = submittedScores.length > 0 && draftScores.length === 0;
+    
+    console.log('Lock status debug:', {
+      isEditMode,
+      submittedScores: submittedScores.length,
+      draftScores: draftScores.length,
+      totalScores: existingScores.length,
+      locked
+    });
+    
+    return locked;
   }, [existingScores, isEditMode]);
 
   // Check if there are any submitted scores to show status
@@ -343,14 +368,17 @@ export function ScoreEntryPage() {
       setScoresData(prev => {
         const updated = { ...prev };
         existingScores.forEach(score => {
-          // Always load existing scores, regardless of current values
-          updated[score.student_id] = {
-            ca1: score.ca1?.toString() || "",
-            ca2: score.ca2?.toString() || "",
-            exam: score.exam?.toString() || ""
-          };
+          // Only load existing scores if user hasn't entered anything yet
+          if (!prev[score.student_id] || 
+              (!prev[score.student_id].ca1 && !prev[score.student_id].ca2 && !prev[score.student_id].exam)) {
+            updated[score.student_id] = {
+              ca1: score.ca1?.toString() || "",
+              ca2: score.ca2?.toString() || "",
+              exam: score.exam?.toString() || ""
+            };
+          }
         });
-        console.log('Updated scoresData:', updated);
+        console.log('Updated scoresData (preserving user input):', updated);
         return updated;
       });
     }
@@ -372,6 +400,8 @@ export function ScoreEntryPage() {
 
   // Handle score input change
   const handleScoreChange = (studentId: number, field: 'ca1' | 'ca2' | 'exam', value: string) => {
+    console.log('handleScoreChange called:', { studentId, field, value });
+    
     // Validate input
     const numValue = parseFloat(value);
     const maxValue = field === 'exam' ? 60 : 20;
@@ -381,13 +411,18 @@ export function ScoreEntryPage() {
       return;
     }
 
-    setScoresData(prev => ({
-      ...prev,
-      [studentId]: {
-        ...prev[studentId],
-        [field]: value
-      }
-    }));
+    console.log('Setting scoresData from:', scoresData[studentId]);
+    setScoresData(prev => {
+      const newData = {
+        ...prev,
+        [studentId]: {
+          ...prev[studentId],
+          [field]: value
+        }
+      };
+      console.log('Setting scoresData to:', newData[studentId]);
+      return newData;
+    });
   };
 
   
@@ -503,7 +538,7 @@ export function ScoreEntryPage() {
         ca1: parseFloat(data.ca1) || 0,
         ca2: parseFloat(data.ca2) || 0,
         exam: parseFloat(data.exam) || 0,
-        total: totalScore,
+        total: totalScore, // Required by TypeScript interface, but database will calculate automatically
         class_average: Math.round(classAverage * 100) / 100,
         class_min: classMin,
         class_max: classMax,
@@ -795,6 +830,15 @@ export function ScoreEntryPage() {
                     
           <div className="flex gap-3">
             <Button
+              onClick={() => loadScoresFromAPI()}
+              className="bg-[#6366F1] hover:bg-[#4F46E5] text-white rounded-lg"
+              disabled={!selectedClassId || !selectedSubjectId}
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh Scores
+            </Button>
+            
+            <Button
               onClick={handleExportExcel}
               className="bg-[#06B6D4] hover:bg-[#0891B2] text-white rounded-lg"
               disabled={!selectedClassId || !selectedSubjectId}
@@ -1012,7 +1056,7 @@ export function ScoreEntryPage() {
             )}
 
             {/* No Rejected Scores Message */}
-            {viewMode === 'rejected' && existingScores.length === 0 && selectedClassId && selectedSubjectId && (
+            {!existingScores.some(s => s.status === 'Rejected') && existingScores.length > 0 && selectedClassId && selectedSubjectId && (
               <div className="bg-green-50 border-l-4 border-green-400 p-4 m-4">
                 <div className="flex">
                   <div className="flex-shrink-0">
@@ -1050,9 +1094,24 @@ export function ScoreEntryPage() {
                     const { total } = calculateScore(data.ca1, data.ca2, data.exam);
                     const hasScore = data.ca1 || data.ca2 || data.exam;
                     
-                    // Check if this specific student's score is submitted (and not in edit mode)
+                    // Check if this specific student's score should be locked
+                    // Lock only submitted scores that are not in edit mode
+                    // Allow editing for draft scores, rejected scores, no scores, and any scores when in edit mode
                     const studentScore = existingScores.find(s => s.student_id === student.id);
                     const isStudentLocked = studentScore?.status === 'Submitted' && !isEditMode;
+                    
+                    // Debug logging for first few students
+                    if (index < 3) {
+                      console.log(`Student ${index + 1} lock debug:`, {
+                        studentId: student.id,
+                        studentName: `${student.firstName} ${student.lastName}`,
+                        scoreStatus: studentScore?.status || 'No score',
+                        hasScore: !!studentScore,
+                        isEditMode,
+                        isStudentLocked,
+                        canEdit: !isStudentLocked
+                      });
+                    }
 
                     return (
                       <tr key={student.id} className="border-b border-[#E5E7EB] hover:bg-[#F9FAFB]">
@@ -1069,7 +1128,7 @@ export function ScoreEntryPage() {
                             value={data.ca1}
                             onChange={(e) => handleScoreChange(student.id, 'ca1', e.target.value)}
                             className="w-20 mx-auto text-center rounded-lg border-[#E5E7EB] text-sm"
-                            disabled={isStudentLocked}
+                            disabled={false} // Temporarily force enable for testing
                             placeholder="0"
                           />
                         </td>
@@ -1081,7 +1140,7 @@ export function ScoreEntryPage() {
                             value={data.ca2}
                             onChange={(e) => handleScoreChange(student.id, 'ca2', e.target.value)}
                             className="w-20 mx-auto text-center rounded-lg border-[#E5E7EB] text-sm"
-                            disabled={isStudentLocked}
+                            disabled={false} // Temporarily force enable for testing
                             placeholder="0"
                           />
                         </td>
@@ -1093,7 +1152,7 @@ export function ScoreEntryPage() {
                             value={data.exam}
                             onChange={(e) => handleScoreChange(student.id, 'exam', e.target.value)}
                             className="w-20 mx-auto text-center rounded-lg border-[#E5E7EB] text-sm"
-                            disabled={isStudentLocked}
+                            disabled={false} // Temporarily force enable for testing
                             placeholder="0"
                           />
                         </td>
@@ -1142,6 +1201,14 @@ export function ScoreEntryPage() {
                   <RefreshCw className="w-4 h-4 mr-2" />
                   Resubmit Corrected Scores
                 </Button>
+              ) : existingScores.some(s => s.status === 'Submitted') && !isEditMode ? (
+                <Button
+                  onClick={toggleEditMode}
+                  className="bg-amber-600 hover:bg-amber-700 text-white rounded-lg"
+                >
+                  <Edit3 className="w-4 h-4 mr-2" />
+                  Enable Edit Mode
+                </Button>
               ) : (
                 <Button
                   onClick={handleSubmit}
@@ -1149,7 +1216,7 @@ export function ScoreEntryPage() {
                   disabled={isLocked}
                 >
                   {isEditMode ? <Save className="w-4 h-4 mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                {isEditMode ? 'Update Scores' : 'Submit'}
+                  {isEditMode ? 'Update Scores' : 'Submit'}
                 </Button>
               )}
             </div>

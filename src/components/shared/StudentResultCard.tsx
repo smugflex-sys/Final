@@ -125,7 +125,7 @@ export function StudentResultCard({
             class_minimum: classMinimum,
             class_maximum: classMaximum
           };
-        }).sort((a, b) => a.subject_name.localeCompare(b.subject_name));
+        }).sort((a: any, b: any) => a.subject_name.localeCompare(b.subject_name));
         setDetailedScoresData(enhancedResultScores);
       } else {
         setDetailedScoresData(studentScores);

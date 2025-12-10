@@ -25,6 +25,8 @@ import {
   exportCompiledResultsToCSV,
   exportPaymentsToCSV,
   exportFeeBalancesToCSV,
+  exportAttendanceToCSV,
+  exportActivityLogsToCSV,
 } from "../../utils/csvExporter";
 
 export function DataBackupPage() {

@@ -2,12 +2,14 @@ import { School, Download } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { useSchool } from "../contexts/SchoolContext";
 
 interface ResultReportCardProps {
   onClose: () => void;
 }
 
 export function ResultReportCard({ onClose }: ResultReportCardProps) {
+  const { schoolSettings } = useSchool();
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 to-gray-200 p-4 md:p-8">
       <div className="max-w-4xl mx-auto">
@@ -35,9 +37,9 @@ export function ResultReportCard({ onClose }: ResultReportCardProps) {
                 <School className="w-10 h-10 text-[#0A2540]" />
               </div>
             </div>
-            <h1 className="text-3xl mb-2 text-white">Graceland Royal Academy Gombe</h1>
-            <p className="text-[#FFD700] italic text-lg">"Wisdom & Illumination"</p>
-            <p className="text-white/80 text-sm mt-2">P.O. Box XXX, Gombe State, Nigeria</p>
+            <h1 className="text-3xl mb-2 text-white">{schoolSettings?.school_name || 'Graceland Royal Academy Gombe'}</h1>
+            <p className="text-[#FFD700] italic text-lg">"{schoolSettings?.school_motto || 'Wisdom & Illumination'}"</p>
+            <p className="text-white/80 text-sm mt-2">{schoolSettings?.school_address || 'P.O. Box XXX, Gombe State, Nigeria'}</p>
             <div className="mt-4 inline-block px-6 py-2 bg-white/10 rounded-full backdrop-blur-sm">
               <p className="text-sm text-white">Terminal Report - Second Term 2024/2025</p>
             </div>

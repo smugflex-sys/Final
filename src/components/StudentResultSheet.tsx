@@ -18,7 +18,9 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
       psychomotorDomains,
       compiledResults,
       subjectAssignments,
+      schoolSettings,
       subjectRegistrations,
+      teachers,
     } = useSchool();
 
     // Get student
@@ -28,9 +30,9 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
     // Get compiled result
     const compiledResult = compiledResults.find(
       (r) =>
-        r.studentId === studentId &&
+        r.student_id === studentId &&
         r.term === term &&
-        r.academicYear === academicYear &&
+        r.academic_year === academicYear &&
         r.status === "Approved"
     );
 
@@ -43,28 +45,38 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
     }
 
     // Get class info
-    const studentClass = classes.find((c) => c.id === student.classId);
+    const studentClass = classes.find((c) => c.id === student.class_id);
 
     // Get all registered subjects for this student's class and term
     const registeredSubjects = subjectRegistrations.filter(
-      sr => sr.classId === student.classId &&
+      (sr: any) => sr.class_id === student.class_id &&
             sr.term === term &&
-            sr.academicYear === academicYear &&
+            sr.academic_year === academicYear &&
             sr.status === 'Active'
     );
 
     // Get all scores for this student and term, but only include registered subjects
     const allStudentScores = compiledResult.scores || [];
     const studentScores = allStudentScores.filter(score => 
-      registeredSubjects.some(rs => 
+      registeredSubjects.some((rs: any) => 
         subjectAssignments.some(sa => 
-          sa.id === score.subjectAssignmentId && 
-          sa.subjectId === rs.subjectId
+          sa.id === score.subject_assignment_id && 
+          sa.subject_id === rs.subject_id
         )
       )
     );
 
-    // Calculate totals
+    // Get affective and psychomotor domains for this student
+    const affectiveDomain = affectiveDomains.find(ad => 
+      ad.student_id === studentId && 
+      ad.term === term && 
+      ad.academic_year === academicYear
+    );
+    const psychomotorDomain = psychomotorDomains.find(pd => 
+      pd.student_id === studentId && 
+      pd.term === term && 
+      pd.academic_year === academicYear
+    );
     const totalScore = studentScores.reduce((sum, s) => sum + s.total, 0);
     const studentAverage = (studentScores || []).length > 0
       ? Math.round((totalScore / (studentScores || []).length) * 100) / 100
@@ -112,13 +124,13 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
             </div>
           </div>
           <h1 className="text-green-600 font-bold text-2xl mb-1">
-            GRACELAND ROYAL ACADEMY
+            {schoolSettings?.school_name || 'GRACELAND ROYAL ACADEMY'}
           </h1>
           <p className="text-sm text-gray-700 mb-1">
-            BEHIND HAKIM PALACE OPPOSITE NNPC DEPOT TUNFURE, GOMBE
+            {schoolSettings?.school_address || 'BEHIND HAKIM PALACE OPPOSITE NNPC DEPOT TUNFURE, GOMBE'}
           </p>
           <p className="text-sm text-gray-600">
-            gracelandroyalacademy05@gmail.com
+            {schoolSettings?.school_email || 'gracelandroyalacademy05@gmail.com'}
           </p>
         </div>
 
@@ -127,9 +139,9 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
           {/* Student Photo */}
           <div className="col-span-2">
             <div className="w-24 h-28 border-2 border-gray-300 rounded overflow-hidden bg-gray-100 flex items-center justify-center">
-              {student.photoUrl ? (
+              {student.photo_url ? (
                 <img
-                  src={student.photoUrl}
+                  src={student.photo_url}
                   alt={`${student.firstName} ${student.lastName}`}
                   className="w-full h-full object-cover"
                 />
@@ -158,8 +170,12 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                   <td className="py-1">{student.gender.toUpperCase()}</td>
                 </tr>
                 <tr>
+                  <td className="py-1 font-medium">AGE:</td>
+                  <td className="py-1">{student.date_of_birth ? new Date().getFullYear() - new Date(student.date_of_birth).getFullYear() : 'N/A'}</td>
+                </tr>
+                <tr>
                   <td className="py-1 font-medium">DOB:</td>
-                  <td className="py-1">{formatDate(student.dateOfBirth)}</td>
+                  <td className="py-1">{formatDate(student.date_of_birth)}</td>
                 </tr>
               </tbody>
             </table>
@@ -184,7 +200,7 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                 <tr>
                   <td className="py-1 font-medium">NO. OF TIMES PRESENT:</td>
                   <td className="py-1">
-                    {compiledResult.timesPresent}/{compiledResult.totalAttendanceDays || 0}
+                    Attendance: {compiledResult.times_present || 0}/{compiledResult.total_attendance_days || 0}
                   </td>
                 </tr>
               </tbody>
@@ -193,13 +209,13 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
 
           <div className="col-span-12 text-right text-sm">
             <span className="font-medium">NO. IN CLASS:</span>{" "}
-            <span className="font-bold">{compiledResult.totalStudents}</span>
+            <span className="font-bold">{compiledResult.total_students}</span>
             <br />
             <span className="font-medium">TERM END:</span>{" "}
-            <span>{formatDate(compiledResult.termEnd) || "25-JUL-2025"}</span>
+            <span>{formatDate(compiledResult.term_end) || "25-JUL-2025"}</span>
             <br />
             <span className="font-medium">NEXT TERM BEGIN:</span>{" "}
-            <span>{compiledResult.nextTermBegin || getNextTermBegin()}</span>
+            <span>{compiledResult.next_term_begin || getNextTermBegin()}</span>
           </div>
         </div>
 
@@ -272,7 +288,7 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                 <tr key={index} className="border-b border-gray-800">
                   <td className="border-r border-gray-800 p-1 text-center">{index + 1}</td>
                   <td className="border-r border-gray-800 p-1 font-medium">
-                    {score.subjectName.toUpperCase()}
+                    {score.subject_name?.toUpperCase() || 'UNKNOWN'}
                   </td>
                   <td className="border-r border-gray-800 p-1 text-center">{score.ca1}</td>
                   <td className="border-r border-gray-800 p-1 text-center">{score.ca2}</td>
@@ -281,20 +297,23 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                     {score.total}
                   </td>
                   <td className="border-r border-gray-800 p-1 text-center">
-                    {score.classAverage}
+                    {score.class_average}
                   </td>
                   <td className="border-r border-gray-800 p-1 text-center font-bold">
                     {score.grade}
                   </td>
                   <td className="border-r border-gray-800 p-1 text-center">{score.remark}</td>
                   <td className="border-r border-gray-800 p-1 text-center">
-                    {score.classMin}
+                    {score.class_min}
                   </td>
                   <td className="border-r border-gray-800 p-1 text-center">
-                    {score.classMax}
+                    {score.class_max}
                   </td>
                   <td className="border-gray-800 p-1 text-center">
-                    {score.subjectTeacher}
+                    {score.entered_by ? (() => {
+                      const teacher = teachers.find(t => t.id === score.entered_by);
+                      return teacher ? `${teacher.firstName} ${teacher.lastName}` : 'N/A';
+                    })() : 'N/A'}
                   </td>
                 </tr>
               ))}
@@ -308,7 +327,7 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                   STUDENT AVERAGE: <span className="ml-2">{studentAverage}</span>
                 </td>
                 <td colSpan={3} className="border-r border-gray-800 p-1">
-                  CLASS AVERAGE: <span className="ml-2">{compiledResult.classAverage}</span>
+                  CLASS AVERAGE: <span className="ml-2">{compiledResult.class_average.toFixed(1)}</span>
                 </td>
                 <td colSpan={2} className="border-gray-800 p-1">
                   STUDENT POSITION:{" "}
@@ -336,34 +355,34 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                 <td className="border-r border-gray-800 p-2 font-bold bg-gray-100" style={{ width: "20%" }}>
                   CLASS TEACHER
                 </td>
-                <td className="p-2 font-medium">{compiledResult.classTeacherName}</td>
+                <td className="p-2 font-medium">{compiledResult.class_teacher_name}</td>
               </tr>
               <tr className="border-b border-gray-800">
                 <td className="border-r border-gray-800 p-2 font-bold bg-gray-100">
                   CLASS TEACHER'S COMMENT
                 </td>
-                <td className="p-2">{compiledResult.classTeacherComment}</td>
+                <td className="p-2">{compiledResult.class_teacher_comment}</td>
               </tr>
               <tr className="border-b border-gray-800">
                 <td className="border-r border-gray-800 p-2 font-bold bg-gray-100">
                   PRINCIPAL
                 </td>
-                <td className="p-2 font-medium">{compiledResult.principalName}</td>
+                <td className="p-2 font-medium">{compiledResult.principal_name || "PRINCIPAL"}</td>
               </tr>
               <tr className="border-b border-gray-800">
                 <td className="border-r border-gray-800 p-2 font-bold bg-gray-100">
                   PRINCIPAL'S COMMENT
                 </td>
-                <td className="p-2">{compiledResult.principalComment || "Keep up the good work!"}</td>
+                <td className="p-2">{compiledResult.principal_comment || "Keep up the good work."}</td>
               </tr>
-              <tr>
+              <tr className="border-b border-gray-800">
                 <td className="border-r border-gray-800 p-2 font-bold bg-gray-100">
                   PRINCIPAL'S SIGNATURE
                 </td>
                 <td className="p-2">
-                  {compiledResult.principalSignature ? (
+                  {compiledResult.principal_signature ? (
                     <img
-                      src={compiledResult.principalSignature}
+                      src={compiledResult.principal_signature}
                       alt="Signature"
                       className="h-8"
                     />
@@ -435,10 +454,10 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                     <tr className="border-b border-gray-800">
                       <td className="border-r border-gray-800 p-1">SENSE OF RESPONSIBILITY</td>
                       <td className="border-r border-gray-800 p-1 text-center">
-                        {affective.senseOfResponsibility}
+                        {affective.sense_of_responsibility}
                       </td>
                       <td className="p-1 text-center">
-                        {getRatingRemark(affective.senseOfResponsibility)}
+                        {getRatingRemark(affective.sense_of_responsibility)}
                       </td>
                     </tr>
                   </>
@@ -472,19 +491,19 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                     <tr className="border-b border-gray-800">
                       <td className="border-r border-gray-800 p-1">ATTENTION TO DIRECTION</td>
                       <td className="border-r border-gray-800 p-1 text-center">
-                        {psychomotor.attentionToDirection}
+                        {psychomotor.attention_to_direction}
                       </td>
                       <td className="p-1 text-center">
-                        {getRatingRemark(psychomotor.attentionToDirection)}
+                        {getRatingRemark(psychomotor.attention_to_direction)}
                       </td>
                     </tr>
                     <tr className="border-b border-gray-800">
                       <td className="border-r border-gray-800 p-1">CONSIDERATE OF OTHERS</td>
                       <td className="border-r border-gray-800 p-1 text-center">
-                        {psychomotor.considerateOfOthers}
+                        {psychomotor.considerate_of_others}
                       </td>
                       <td className="p-1 text-center">
-                        {getRatingRemark(psychomotor.considerateOfOthers)}
+                        {getRatingRemark(psychomotor.considerate_of_others)}
                       </td>
                     </tr>
                     <tr className="border-b border-gray-800">
@@ -506,19 +525,19 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
                     <tr className="border-b border-gray-800">
                       <td className="border-r border-gray-800 p-1">VERBAL FLUENCY</td>
                       <td className="border-r border-gray-800 p-1 text-center">
-                        {psychomotor.verbalFluency}
+                        {psychomotor.verbal_fluency}
                       </td>
                       <td className="p-1 text-center">
-                        {getRatingRemark(psychomotor.verbalFluency)}
+                        {getRatingRemark(psychomotor.verbal_fluency)}
                       </td>
                     </tr>
                     <tr className="border-b border-gray-800">
                       <td className="border-r border-gray-800 p-1">WORKS WELL INDEPENDENTLY</td>
                       <td className="border-r border-gray-800 p-1 text-center">
-                        {psychomotor.worksWellIndependently}
+                        {psychomotor.works_well_independently}
                       </td>
                       <td className="p-1 text-center">
-                        {getRatingRemark(psychomotor.worksWellIndependently)}
+                        {getRatingRemark(psychomotor.works_well_independently)}
                       </td>
                     </tr>
                   </>
@@ -530,7 +549,7 @@ export const StudentResultSheet = forwardRef<HTMLDivElement, StudentResultSheetP
 
         {/* Footer/Watermark */}
         <div className="text-center text-xs text-gray-500 mt-4">
-          <p className="italic">Wisdom & Illumination</p>
+          <p className="italic">{schoolSettings?.school_motto || 'Wisdom & Illumination'}</p>
         </div>
       </div>
     );

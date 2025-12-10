@@ -178,84 +178,50 @@ const constructiveFeedback = {
 };
 
 function generateAutoComment(averageScore: number, position: number, totalStudents: number): string {
-  let comments: string[] = [];
-  
-  // Academic performance comment based on average score
-  let academicComment = "";
-  let performanceLevel = "";
-  
-  if (averageScore >= 80) {
-    academicComment = commentTemplates.excellent[Math.floor(Math.random() * commentTemplates.excellent.length)];
-    performanceLevel = "excellent";
+  // Generate comment based on specified ranges
+  if (averageScore >= 90) {
+    return 'Excellent';
+  } else if (averageScore >= 80) {
+    return 'A very good result';
   } else if (averageScore >= 70) {
-    academicComment = commentTemplates.veryGood[Math.floor(Math.random() * commentTemplates.veryGood.length)];
-    performanceLevel = "veryGood";
+    return 'Good result';
   } else if (averageScore >= 60) {
-    academicComment = commentTemplates.good[Math.floor(Math.random() * commentTemplates.good.length)];
-    performanceLevel = "good";
+    return 'A satisfaction result';
   } else if (averageScore >= 50) {
-    academicComment = commentTemplates.average[Math.floor(Math.random() * commentTemplates.average.length)];
-    performanceLevel = "average";
-  } else if (averageScore >= 40) {
-    academicComment = commentTemplates.belowAverage[Math.floor(Math.random() * commentTemplates.belowAverage.length)];
-    performanceLevel = "belowAverage";
+    return 'A fair result';
   } else {
-    academicComment = commentTemplates.poor[Math.floor(Math.random() * commentTemplates.poor.length)];
-    performanceLevel = "poor";
+    return 'it is well';
   }
-  
-  comments.push(academicComment);
-  
-  // Position comment
-  const positionPercentage = (position / totalStudents) * 100;
-  let positionComment = "";
-  let positionLevel = "";
-  
-  if (positionPercentage <= 10) {
-    positionComment = positionComments.top[Math.floor(Math.random() * positionComments.top.length)];
-    positionLevel = "top";
-  } else if (positionPercentage <= 30) {
-    positionComment = positionComments.upper[Math.floor(Math.random() * positionComments.upper.length)];
-    positionLevel = "upper";
-  } else if (positionPercentage <= 70) {
-    positionComment = positionComments.middle[Math.floor(Math.random() * positionComments.middle.length)];
-    positionLevel = "middle";
-  } else {
-    positionComment = positionComments.lower[Math.floor(Math.random() * positionComments.lower.length)];
-    positionLevel = "lower";
-  }
-  
-  if (positionComment) {
-    comments.push(positionComment);
-  }
-  
-  // Constructive feedback based on performance level
-  const feedbackOptions = constructiveFeedback[performanceLevel as keyof typeof constructiveFeedback];
-  if (feedbackOptions && feedbackOptions.length > 0) {
-    const feedback = feedbackOptions[Math.floor(Math.random() * feedbackOptions.length)];
-    comments.push(feedback);
-  }
-  
-  return comments.join(" ");
 }
 
 function generateMultipleCommentOptions(averageScore: number, position: number, totalStudents: number): string[] {
-  const options: string[] = [];
+  const baseComment = generateAutoComment(averageScore, position, totalStudents);
   
-  // Generate 5 different comment options
-  for (let i = 0; i < 5; i++) {
-    options.push(generateAutoComment(averageScore, position, totalStudents));
+  // Generate variations of the base comment for teacher to choose from
+  const options: string[] = [baseComment];
+  
+  // Add some variations based on the base comment
+  if (averageScore >= 90) {
+    options.push('Excellent performance and outstanding achievement');
+    options.push('Excellent work, maintain this standard');
+  } else if (averageScore >= 80) {
+    options.push('A very good result, keep pushing for excellence');
+    options.push('A very good result with room for improvement');
+  } else if (averageScore >= 70) {
+    options.push('Good result, more effort needed for excellence');
+    options.push('Good result, continue working hard');
+  } else if (averageScore >= 60) {
+    options.push('A satisfaction result, improvement is possible');
+    options.push('A satisfaction result, put in more effort');
+  } else if (averageScore >= 50) {
+    options.push('A fair result, significant improvement needed');
+    options.push('A fair result, must work harder');
+  } else {
+    options.push('it is well, but serious improvement required');
+    options.push('it is well, needs dedicated effort');
   }
   
-  // Ensure all options are unique
-  const uniqueOptions = [...new Set(options)];
-  
-  // If we don't have enough unique options, add some variations
-  while (uniqueOptions.length < 3) {
-    uniqueOptions.push(generateAutoComment(averageScore, position, totalStudents));
-  }
-  
-  return uniqueOptions.slice(0, 5);
+  return options.slice(0, 5);
 }
 
 function generatePrincipalComment(averageScore: number): string {
@@ -883,7 +849,8 @@ export function CompileResultsPage() {
       existingResult,
       isSubmitted,
       isRejected,
-      status: existingResult?.status
+      status: existingResult?.status,
+      rejectionReason: existingResult?.rejection_reason
     });
 
     // Calculate totals using same logic as studentsCompletion
@@ -1084,16 +1051,18 @@ export function CompileResultsPage() {
       const position = sortedStudents.indexOf(averageScore) + 1;
 
       let autoComment = '';
-      if (averageScore >= 70) {
-        autoComment = 'Excellent performance! Keep up the outstanding work.';
+      if (averageScore >= 90) {
+        autoComment = 'Excellent';
+      } else if (averageScore >= 80) {
+        autoComment = 'A very good result';
+      } else if (averageScore >= 70) {
+        autoComment = 'Good result';
       } else if (averageScore >= 60) {
-        autoComment = 'Very good performance. Continue to work hard.';
+        autoComment = 'A satisfaction result';
       } else if (averageScore >= 50) {
-        autoComment = 'Good effort. There is room for improvement.';
-      } else if (averageScore >= 40) {
-        autoComment = 'Fair performance. More effort is needed.';
+        autoComment = 'A fair result';
       } else {
-        autoComment = 'Needs serious improvement. Please put in more effort.';
+        autoComment = 'it is well';
       }
 
       const compiledData = {

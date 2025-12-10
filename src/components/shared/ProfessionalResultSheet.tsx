@@ -527,7 +527,7 @@ export function ProfessionalResultSheet({
             <div className="border-b-2 border-gray-400 mb-2 pb-8">
               <p className="text-sm text-gray-600">Next Term Begins</p>
             </div>
-            <p className="text-sm font-semibold">{resultData.next_term_begin || '_________________'}</p>
+            <p className="text-sm font-semibold">{schoolSettings?.resumption_date || '_________________'}</p>
           </div>
         </div>
       </div>
