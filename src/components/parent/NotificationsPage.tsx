@@ -5,7 +5,7 @@ import { Button } from "../ui/button";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { toast } from "sonner";
 import { useSchool, Notification } from "../../contexts/SchoolContext";
 
@@ -32,7 +32,6 @@ export function NotificationsPage() {
       try {
         await loadNotificationsFromAPI();
       } catch (error) {
-        console.error('Error loading notifications:', error);
         toast.error('Failed to load notifications');
       } finally {
         setLoading(false);
@@ -338,6 +337,7 @@ export function NotificationsPage() {
               {selectedNotification && getNotificationIcon(selectedNotification.type)}
               {selectedNotification?.title}
             </DialogTitle>
+            <DialogDescription>View detailed information about this notification.</DialogDescription>
           </DialogHeader>
           {selectedNotification && (
             <div className="space-y-4">

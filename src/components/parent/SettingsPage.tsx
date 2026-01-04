@@ -7,7 +7,7 @@ import { Label } from "../ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Badge } from "../ui/badge";
 import { Alert, AlertDescription } from "../ui/alert";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../ui/dialog";
 import { toast } from "sonner";
 import { useSchool } from "../../contexts/SchoolContext";
 
@@ -42,7 +42,18 @@ export function SettingsPage() {
     currentUser, 
     parents, 
     updateParent,
-    loadParentsFromAPI
+    loadParentsFromAPI,
+    loadParentStudentLinksFromAPI,
+    loadStudentsFromAPI,
+    loadCompiledResultsFromAPI,
+    loadScoresFromAPI,
+    loadSchoolSettings,
+    getParentChildren,
+    parentStudentLinks,
+    students,
+    feeStructures,
+    loadFeeStructuresFromAPI,
+    loadStudentFeeBalancesFromAPI
   } = useSchool();
 
   const [loading, setLoading] = useState(false);
@@ -53,6 +64,7 @@ export function SettingsPage() {
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const [retryScheduled, setRetryScheduled] = useState(false); // Prevent multiple retries
   
   const [profileData, setProfileData] = useState<ParentProfile>({
     id: 0,
@@ -92,38 +104,102 @@ export function SettingsPage() {
       if (currentUser && currentUser.role === 'parent') {
         setLoading(true);
         try {
-          await loadParentsFromAPI();
-          const parent = parents.find(p => p.id === currentUser.linked_id);
-          if (parent) {
-            setProfileData({
-              id: parent.id,
-              firstName: parent.firstName || '',
-              lastName: parent.lastName || '',
-              email: parent.email || '',
-              phone: parent.phone || '',
-              address: parent.address || '',
-              occupation: parent.occupation || '',
-              workplace: '',
-              relationship: '',
-              emergencyContact: '',
-              emergencyPhone: '',
-              profilePicture: '',
-              communicationPreferences: {
-                email: true,
-                sms: true,
-                push: true,
-                whatsapp: false
-              },
-              privacySettings: {
-                shareContactInfo: true,
-                shareEmergencyInfo: true,
-                allowPhotoSharing: false
+          // Load ALL required data like MyChildrenPage
+          await Promise.all([
+            loadParentsFromAPI(),
+            loadParentStudentLinksFromAPI(),
+            loadStudentsFromAPI(),
+            loadCompiledResultsFromAPI(),
+            loadScoresFromAPI(),
+            loadSchoolSettings(),
+            loadFeeStructuresFromAPI(), // ← IMPORTANT: Load fee structures for fee calculations
+            loadStudentFeeBalancesFromAPI() // ← IMPORTANT: Load fee balances for fee calculations
+          ]);
+          
+          // Wait a moment for state to update after API calls
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
+          const parentId = currentUser?.linked_id;
+          
+          if (parentId) {
+            // Only proceed if data is actually loaded
+            if (parentStudentLinks.length > 0 && students.length > 0) {
+              const parent = parents.find(p => p.id === currentUser.linked_id);
+              if (parent) {
+                setProfileData({
+                  id: parent.id,
+                  firstName: parent.firstName || '',
+                  lastName: parent.lastName || '',
+                  email: parent.email || '',
+                  phone: parent.phone || '',
+                  address: parent.address || '',
+                  occupation: parent.occupation || '',
+                  workplace: '',
+                  relationship: '',
+                  emergencyContact: '',
+                  emergencyPhone: '',
+                  profilePicture: '',
+                  communicationPreferences: {
+                    email: true,
+                    sms: true,
+                    push: true,
+                    whatsapp: false
+                  },
+                  privacySettings: {
+                    shareContactInfo: true,
+                    shareEmergencyInfo: true,
+                    allowPhotoSharing: false
+                  }
+                });
               }
-            });
+            } else {
+              // Only schedule retry if not already scheduled
+              if (!retryScheduled) {
+                setRetryScheduled(true);
+                
+                // Retry once more after 1 second
+                setTimeout(async () => {
+                  if (parentStudentLinks.length > 0 && students.length > 0) {
+                    const parent = parents.find(p => p.id === currentUser.linked_id);
+                    if (parent) {
+                      setProfileData({
+                        id: parent.id,
+                        firstName: parent.firstName || '',
+                        lastName: parent.lastName || '',
+                        email: parent.email || '',
+                        phone: parent.phone || '',
+                        address: parent.address || '',
+                        occupation: parent.occupation || '',
+                        workplace: '',
+                        relationship: '',
+                        emergencyContact: '',
+                        emergencyPhone: '',
+                        profilePicture: '',
+                        communicationPreferences: {
+                          email: true,
+                          sms: true,
+                          push: true,
+                          whatsapp: false
+                        },
+                        privacySettings: {
+                          shareContactInfo: true,
+                          shareEmergencyInfo: true,
+                          allowPhotoSharing: false
+                        }
+                      });
+                    }
+                  } else {
+                    // Data still not loaded after retry
+                  }
+                  setRetryScheduled(false); // Reset retry flag
+                }, 1000);
+              }
+            }
+          } else {
+            // No parent ID found
           }
         } catch (error) {
-          console.error('Error loading parent data:', error);
-          toast.error('Failed to load profile data');
+          toast.error("Failed to load parent data");
         } finally {
           setLoading(false);
         }
@@ -144,7 +220,6 @@ export function SettingsPage() {
       await updateParent(profileData.id, profileData);
       toast.success('Profile updated successfully');
     } catch (error) {
-      console.error('Error updating profile:', error);
       toast.error('Failed to update profile');
     } finally {
       setSaving(false);
@@ -174,7 +249,6 @@ export function SettingsPage() {
       setShowPasswordDialog(false);
       setPasswordData({ currentPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error) {
-      console.error('Error changing password:', error);
       toast.error('Failed to change password. Please check your current password.');
     } finally {
       setSaving(false);
@@ -641,6 +715,7 @@ export function SettingsPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Change Password</DialogTitle>
+            <DialogDescription>Update your account password for security purposes.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>

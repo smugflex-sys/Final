@@ -1,6 +1,4 @@
 import { useState, useEffect } from "react";
-import { Button } from "../ui/button";
-import { ArrowLeft, Download, Printer } from "lucide-react";
 import { useSchool } from "../../contexts/SchoolContext";
 import { StudentResultCard } from "./StudentResultCard";
 
@@ -27,18 +25,6 @@ export function FullPageResultView({ studentId, resultId, onClose }: FullPageRes
     setStudentClass(foundClass);
   }, [studentId, resultId, students, compiledResults, classes]);
 
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const handleDownload = () => {
-    // Trigger download from the StudentResultCard component
-    const downloadButton = document.querySelector('[data-download-pdf]') as HTMLButtonElement;
-    if (downloadButton) {
-      downloadButton.click();
-    }
-  };
-
   if (!student || !result) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -62,13 +48,12 @@ export function FullPageResultView({ studentId, resultId, onClose }: FullPageRes
           }
           
           .full-page-container {
-            background: #f3f4f6;
             min-height: 100vh;
             padding: 2rem 0;
           }
           
           .no-print {
-            display: block !important;
+            display: none !important;
           }
           
           .print-only {
@@ -113,52 +98,6 @@ export function FullPageResultView({ studentId, resultId, onClose }: FullPageRes
       `}</style>
 
       <div className="min-h-screen bg-gray-100">
-        {/* Header Controls - No Print */}
-        <div className="no-print bg-white shadow-md border-b border-gray-200 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-4">
-              <div className="flex items-center gap-4">
-                <Button
-                  variant="outline"
-                  onClick={onClose}
-                  className="flex items-center gap-2"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Back to Results
-                </Button>
-                <div>
-                  <h1 className="text-xl font-semibold text-gray-900">
-                    {student.firstName} {student.lastName} - Result Sheet
-                  </h1>
-                  <p className="text-sm text-gray-600">
-                    {studentClass?.name} • {result.term} • {result.academic_year}
-                  </p>
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  onClick={handlePrint}
-                  className="flex items-center gap-2"
-                >
-                  <Printer className="w-4 h-4" />
-                  Print
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleDownload}
-                  className="flex items-center gap-2"
-                  data-download-pdf
-                >
-                  <Download className="w-4 h-4" />
-                  Download PDF
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Main Content - Full Page A4 Container */}
         <div className="full-page-container py-8">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -186,16 +125,6 @@ export function FullPageResultView({ studentId, resultId, onClose }: FullPageRes
                   currentUser={{ role: 'admin' }}
                 />
               </div>
-            </div>
-
-            {/* Instructions for screen viewing - No Print */}
-            <div className="no-print mt-8 text-center text-gray-600">
-              <p className="text-sm">
-                This is displayed in A4 format. Use the Print button to print or Download PDF to save.
-              </p>
-              <p className="text-xs mt-2">
-                The result sheet is optimized for A4 paper size (210mm × 297mm).
-              </p>
             </div>
           </div>
         </div>
