@@ -127,6 +127,7 @@ export function MyChildrenPage() {
       if (currentUser && currentUser.role === "parent") {
         setLoading(true);
         try {
+          console.log('MyChildrenPage: Loading parent data...');
           await Promise.all([
             loadParentsFromAPI(),
             loadParentStudentLinksFromAPI(),
@@ -139,6 +140,8 @@ export function MyChildrenPage() {
             loadSchoolSettings() // ← Load school settings for logo and info
           ]);
           
+          console.log('MyChildrenPage: Data loaded, compiledResults length:', compiledResults.length);
+
           const parentId = currentUser?.linked_id;
           
           if (parentId) {
@@ -170,6 +173,7 @@ export function MyChildrenPage() {
             toast.error("Parent account not properly linked");
           }
         } catch (error) {
+          console.error("Error loading parent data:", error);
           toast.error("Failed to load parent data");
           setChildren([]);
         } finally {
@@ -208,6 +212,11 @@ export function MyChildrenPage() {
         return;
       }
 
+      console.log('=== PARENT PDF DOWNLOAD STARTED ===');
+      console.log('Student:', student.firstName, student.lastName);
+      console.log('Student ID:', student.id);
+      console.log('Result ID:', result.id);
+      
       // Use the EXACT same admin PDF function from shared utility
       
       // Pass exact same context that admin uses
@@ -220,10 +229,17 @@ export function MyChildrenPage() {
         psychomotorDomains: psychomotorDomains // ← Pass psychomotor domains
       };
       
+      console.log('Parent context being passed:', context);
+      console.log('School settings from context:', schoolSettings);
+      console.log('Scores from context:', scores.length);
+      
       await generatePDFFromData(student, result, context);
       
+      console.log('=== PARENT PDF COMPLETED SUCCESSFULLY ===');
       toast.success('PDF downloaded successfully!');
     } catch (error) {
+      console.error('=== PARENT PDF GENERATION FAILED ===');
+      console.error('Error:', error);
       toast.error('Failed to download PDF');
     }
   };
