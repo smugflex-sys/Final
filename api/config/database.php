@@ -16,10 +16,13 @@ class Database {
     public function __construct() {
         $this->loadEnv();
         // Use environment variables if available, otherwise use defaults
-        $this->host = $_ENV['DB_HOST'] ?? getenv('DB_HOST') ?? 'localhost';
-        $this->db_name = $_ENV['DB_NAME'] ?? getenv('DB_NAME') ?? 'mdpjhtua_graceland_academy';
-        $this->username = $_ENV['DB_USER'] ?? getenv('DB_USER') ?? 'mdpjhtua_graceland_academy';
-        $this->password = $_ENV['DB_PASS'] ?? getenv('DB_PASS') ?? '159075321@Au';
+        $this->host = $_ENV['DB_HOST'] ?? getenv('DB_HOST');
+        $this->db_name = $_ENV['DB_NAME'] ?? getenv('DB_NAME');
+        $this->username = $_ENV['DB_USER'] ?? getenv('DB_USER');
+        $this->password = $_ENV['DB_PASS'] ?? getenv('DB_PASS');
+        if (!$this->host || !$this->db_name || !$this->username || !$this->password) {
+            throw new Exception('Database configuration is missing. Please set DB_HOST, DB_NAME, DB_USER, and DB_PASS in your .env or environment.');
+        }
     }
 
     private function loadEnv() {
@@ -75,7 +78,11 @@ class Config {
     const JWT_ALGORITHM = 'HS256';
     
     public static function getJwtSecret() {
-        return self::get('JWT_SECRET', 'your-secret-key-change-in-production');
+        $secret = self::get('JWT_SECRET');
+        if (!$secret) {
+            throw new Exception('JWT_SECRET is missing. Please set JWT_SECRET in your .env or environment.');
+        }
+        return $secret;
     }
     
     public static function getJwtExpiry() {

@@ -67,7 +67,7 @@ class ApiService {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    retries = 2 // Reduced retries for faster failure
+    retries = 3 // Increased retries for low networks
   ): Promise<ApiResponse<T>> {
     const url = buildUrl(endpoint);
     const token = getAuthToken();
@@ -83,6 +83,10 @@ class ApiService {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
+    // Adaptive timeout based on connection status
+    const baseTimeout = API_CONFIG.TIMEOUT;
+    const adaptiveTimeout = this.connectionStatus.isSlow ? baseTimeout * 2 : baseTimeout;
+
     // Merge with provided headers
     if (options.headers) {
       Object.assign(headers, options.headers);
@@ -90,7 +94,7 @@ class ApiService {
 
     // Request configuration with timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    const timeoutId = setTimeout(() => controller.abort(), adaptiveTimeout);
 
     const config: RequestInit = {
       ...options,
@@ -101,7 +105,7 @@ class ApiService {
     // Retry logic for network errors
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
-        console.log(`API Request (attempt ${attempt + 1}/${retries}): ${endpoint}`);
+        // API Request attempt
         
         const response = await fetch(url, config);
         clearTimeout(timeoutId);
@@ -137,7 +141,7 @@ class ApiService {
               return retryData;
             }
           } catch (refreshError) {
-            console.error('Token refresh failed:', refreshError);
+            // Token refresh failed
             removeAuthToken();
             throw new Error('Session expired. Please login again.');
           }
@@ -147,27 +151,42 @@ class ApiService {
           throw new Error(data.message || `HTTP ${response.status}: ${response.statusText}`);
         }
 
-        console.log(`API Request successful: ${endpoint}`);
+        // Normalize payload-level failures (e.g., success:false with embedded status)
+        if (data && typeof data === 'object' && data.success === false) {
+          const payloadStatus = typeof data.status === 'number' ? data.status : Number(data.status);
+          const statusCode = Number.isFinite(payloadStatus) ? payloadStatus : response.status;
+          const msg = data.error || data.message || 'Request failed';
+          // If backend embeds 401/403/4xx in JSON while HTTP status is 200, surface it as an error
+          if (statusCode >= 400) {
+            throw new Error(`${statusCode} ${msg}`);
+          }
+          // Otherwise still treat success:false as an error
+          throw new Error(msg);
+        }
+
+        // API Request successful
         return data;
 
       } catch (error: any) {
         clearTimeout(timeoutId);
         
         if (error.name === 'AbortError') {
-          console.error(`Request timeout (attempt ${attempt + 1}): ${endpoint}`);
+          // Request timeout
           if (attempt < retries - 1) {
-            console.log(`Retrying in ${1000 * (attempt + 1)}ms...`);
-            await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+            // Adaptive retry delay for slow networks
+            const baseDelay = this.connectionStatus.isSlow ? 2000 : 1000;
+            await new Promise(resolve => setTimeout(resolve, baseDelay * (attempt + 1)));
             continue;
           }
           throw new Error('Request timeout. Please check your connection.');
         }
         
         if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-          console.error(`Network error (attempt ${attempt + 1}): ${endpoint}`, error);
+          // Network error
           if (attempt < retries - 1) {
-            console.log(`Retrying in ${2000 * (attempt + 1)}ms...`);
-            await new Promise(resolve => setTimeout(resolve, 2000 * (attempt + 1)));
+            // Adaptive retry delay for network errors
+            const baseDelay = this.connectionStatus.isSlow ? 4000 : 2000;
+            await new Promise(resolve => setTimeout(resolve, baseDelay * (attempt + 1)));
             continue;
           }
           throw new Error('Network connection failed. Please check your internet connection.');

@@ -36,8 +36,21 @@ export function ScoreEntryPage() {
   const [isEditMode, setIsEditMode] = useState<boolean>(false);
   const [autoSaveStatus, setAutoSaveStatus] = useState<string>('');
   const [lastSavedData, setLastSavedData] = useState<Record<number, { ca1: string; ca2: string; exam: string }>>({});
-  const [selectedTerm, setSelectedTerm] = useState<string>(currentTerm);
-  const [selectedYear, setSelectedYear] = useState<string>(currentAcademicYear);
+  const [selectedTerm, setSelectedTerm] = useState<string>(currentTerm || '');
+  const [selectedYear, setSelectedYear] = useState<string>(currentAcademicYear || '');
+
+  // Keep selection in sync with system term/year (e.g., after initial load)
+  useEffect(() => {
+    if (currentTerm && !selectedTerm) {
+      setSelectedTerm(currentTerm);
+    }
+  }, [currentTerm, selectedTerm]);
+
+  useEffect(() => {
+    if (currentAcademicYear && !selectedYear) {
+      setSelectedYear(currentAcademicYear);
+    }
+  }, [currentAcademicYear, selectedYear]);
 
   // Check if selected class is CRECHE (Onyx)
   const isCrecheClass = useMemo(() => {
@@ -45,7 +58,9 @@ export function ScoreEntryPage() {
   }, [selectedClassId]);
 
   // Get current teacher
-  const currentTeacher = currentUser ? teachers.find(t => t.id === String(currentUser.linked_id)) : null;
+  const currentTeacher = currentUser
+    ? teachers.find(t => String(t.id) === String(currentUser.linked_id))
+    : null;
   const teacherAssignments = currentTeacher ? getTeacherAssignments(Number(currentTeacher.id)) : [];
 
     
@@ -82,10 +97,7 @@ export function ScoreEntryPage() {
     // Filter assignments for selected class and create unique subjects list
     const subjectsForClass = teacherAssignments.filter(a => String(a.class_id) === selectedClassId);
     
-    if (subjectsForClass.length === 0) {
-      toast.warning(`No subject assignments found for teacher ${currentTeacher?.id} in class ${selectedClassId}`);
-      return [];
-    }
+    if (subjectsForClass.length === 0) return [];
     
     // Create unique subjects map to avoid duplicates
     const uniqueSubjects = new Map();
@@ -105,6 +117,57 @@ export function ScoreEntryPage() {
     return result;
   }, [selectedClassId, teacherAssignments, currentTeacher]);
 
+  // Filter existing scores based on current selection
+  const existingScores = useMemo(() => {
+    if (!selectedSubjectId || !selectedClassId || !teacherAssignments.length) return [];
+
+    const assignment = teacherAssignments.find(
+      a => String(a.subject_id) === String(selectedSubjectId) && String(a.class_id) === String(selectedClassId)
+    );
+
+    if (!assignment) return [];
+
+    // Filter scores for current assignment, term, and year
+    const filteredScores = scores.filter(s =>
+      s.subject_assignment_id === assignment.id &&
+      s.term === selectedTerm &&
+      s.academic_year === selectedYear
+    );
+
+    // Show all scores including submitted ones - they should persist until admin changes term/session
+    return filteredScores.map(score => ({
+      ...score,
+      student: students.find(s => s.id === score.student_id)
+    }));
+  }, [selectedSubjectId, selectedClassId, teacherAssignments, scores, selectedTerm, selectedYear, students]);
+
+  // Check if locked - only lock if admin has APPROVED scores or compiled results
+  // Class teacher submission (Submitted status) does NOT lock scores
+  // Only admin approval (Approved status) locks scores
+  const isLocked = useMemo(() => {
+    // Always allow editing in edit mode (after admin rejection)
+    if (isEditMode) {
+      return false;
+    }
+
+    // Check if any individual scores are approved by admin
+    const hasApprovedScores = existingScores.some(s => s.status === 'Approved');
+
+    // Also check if compiled results are approved by admin
+    const hasApprovedCompiledResults = compiledResults.some((cr: any) =>
+      String(cr.class_id) === String(selectedClassId) &&
+      cr.term === selectedTerm &&
+      cr.academic_year === selectedYear &&
+      cr.status === 'Approved'
+    );
+
+    // Allow editing if there are rejected scores (admin rejected, needs correction)
+    const hasRejectedScores = existingScores.some(s => s.status === 'Rejected');
+
+    // Lock only if: (1) Any scores are approved AND (2) No rejected scores
+    return (hasApprovedScores || hasApprovedCompiledResults) && !hasRejectedScores;
+  }, [selectedClassId, selectedTerm, selectedYear, isEditMode, existingScores, compiledResults]);
+
   // Get students for selected class
   const classStudents = useMemo(() => {
     if (!selectedClassId) return [];
@@ -122,30 +185,6 @@ export function ScoreEntryPage() {
         return lastNameA.localeCompare(lastNameB);
       });
   }, [selectedClassId, students]);
-
-  // Filter existing scores based on current selection
-  const existingScores = useMemo(() => {
-    if (!selectedSubjectId || !selectedClassId || !teacherAssignments.length) return [];
-    
-    const assignment = teacherAssignments.find(
-      a => String(a.subject_id) === String(selectedSubjectId) && String(a.class_id) === String(selectedClassId)
-    );
-    
-    if (!assignment) return [];
-    
-    // Filter scores for current assignment, term, and year
-    const filteredScores = scores.filter(s => 
-      s.subject_assignment_id === assignment.id &&
-      s.term === selectedTerm &&
-      s.academic_year === selectedYear
-    );
-    
-    // Show all scores including submitted ones - they should persist until admin changes term/session
-    return filteredScores.map(score => ({
-      ...score,
-      student: students.find(s => s.id === score.student_id)
-    }));
-  }, [selectedSubjectId, selectedClassId, teacherAssignments, scores, selectedTerm, selectedYear]);
 
   // Load existing scores into form when component mounts or selection changes
   useEffect(() => {
@@ -174,7 +213,7 @@ export function ScoreEntryPage() {
   // Refresh scores data when component mounts or when selection changes
   useEffect(() => {
     if (selectedClassId && selectedSubjectId) {
-      loadScoresFromAPI();
+      loadScoresFromAPI(selectedTerm, selectedYear);
     }
   }, [selectedClassId, selectedSubjectId, selectedTerm, selectedYear]);
 
@@ -269,9 +308,9 @@ export function ScoreEntryPage() {
           // Allow updates if: (1) Edit mode active, (2) Score not submitted yet, OR (3) Results not admin-approved
           if (isEditMode || existingScore.status === 'Draft' || existingScore.status === 'Rejected' || !isLocked) {
             savePromises.push(updateScore(existingScore.id, scoreData));
-            console.log(`Updating score for student ${studentIdNum} - allowed`);
+            //console.log(`Updating score for student ${studentIdNum} - allowed`);
           } else {
-            console.log(`Score update blocked for student ${studentIdNum} - results are admin-approved`);
+            //console.log(`Score update blocked for student ${studentIdNum} - results are admin-approved`);
             // Provide user feedback for blocked updates
             const student = classStudents.find(s => s.id === studentIdNum);
             toast.error(`Cannot update score for ${student?.firstName} ${student?.lastName}: Results have been approved by admin`, {
@@ -294,24 +333,24 @@ export function ScoreEntryPage() {
       setTimeout(() => setAutoSaveStatus(''), 2000);
       
     } catch (error) {
-      console.error('Auto-save error:', error);
+      //console.error('Auto-save error:', error);
       setAutoSaveStatus('Save failed');
       toast.error('Auto-save failed. Please try manual save.');
     }
-  }, [scoresData, lastSavedData, selectedClassId, selectedSubjectId, selectedTerm, selectedYear, currentTeacher, teacherAssignments, existingScores, currentUser, isEditMode, isCrecheClass]);
+  }, [scoresData, lastSavedData, selectedClassId, selectedSubjectId, selectedTerm, selectedYear, currentTeacher, teacherAssignments, existingScores, currentUser, isEditMode, isCrecheClass, isLocked]);
 
     // Auto-refresh scores for real-time updates
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        await loadScoresFromAPI();
+        await loadScoresFromAPI(selectedTerm, selectedYear);
       } catch (error) {
-        console.error('Error auto-refreshing scores:', error);
+        //console.error('Error auto-refreshing scores:', error);
       }
     }, 30000); // Changed from 5000 to 30000 to reduce frequency
 
     return () => clearInterval(interval);
-  }, [selectedClassId, selectedSubjectId]); // Remove loadScoresFromAPI from dependencies
+  }, [selectedClassId, selectedSubjectId, selectedTerm, selectedYear]); // Remove loadScoresFromAPI from dependencies
 
   // Auto-save on data change with debounce
   useEffect(() => {
@@ -371,65 +410,6 @@ export function ScoreEntryPage() {
     };
   }, [scoresData, classStudents, isCrecheClass]);
 
-  // Check if locked - only lock if admin has APPROVED scores or compiled results
-  // Class teacher submission (Submitted status) does NOT lock scores
-  // Only admin approval (Approved status) locks scores
-  const isLocked = useMemo(() => {
-    // Always allow editing in edit mode (after admin rejection)
-    if (isEditMode) {
-      console.log('Edit mode active - scores unlocked');
-      return false;
-    }
-    
-    // Check if any individual scores are approved by admin
-    const hasApprovedScores = existingScores.some(s => s.status === 'Approved');
-    
-    // Also check if compiled results are approved by admin
-    const hasApprovedCompiledResults = compiledResults.some((cr: any) => 
-      String(cr.class_id) === String(selectedClassId) &&
-      cr.term === selectedTerm &&
-      cr.academic_year === selectedYear &&
-      cr.status === 'Approved'
-    );
-    
-    // Allow editing if there are rejected scores (admin rejected, needs correction)
-    const hasRejectedScores = existingScores.some(s => s.status === 'Rejected');
-    
-    // Lock only if: (1) Any scores are approved AND (2) No rejected scores
-    const locked = (hasApprovedScores || hasApprovedCompiledResults) && !hasRejectedScores;
-    
-    console.log('Score Lock Status Analysis:', {
-      selectedClass: selectedClass?.name,
-      selectedSubject: selectedAssignment?.subject_name,
-      selectedTerm,
-      selectedYear,
-      isEditMode,
-      hasApprovedScores,
-      hasApprovedCompiledResults,
-      hasRejectedScores,
-      existingScoresCount: existingScores.length,
-      approvedScoresCount: existingScores.filter(s => s.status === 'Approved').length,
-      rejectedScoresCount: existingScores.filter(s => s.status === 'Rejected').length,
-      compiledResultsCount: compiledResults.length,
-      approvedCompiledResultsCount: compiledResults.filter((cr: any) => 
-        String(cr.class_id) === String(selectedClassId) &&
-        cr.term === selectedTerm &&
-        cr.academic_year === selectedYear &&
-        cr.status === 'Approved'
-      ).length,
-      finalLockedStatus: locked,
-      lockReason: locked 
-        ? 'Admin approved scores/compiled results - scores locked' 
-        : hasRejectedScores 
-        ? 'Rejected scores found - editing allowed'
-        : (hasApprovedScores || hasApprovedCompiledResults)
-        ? 'Admin approved - scores locked'
-        : 'No admin approval - editing allowed'
-    });
-    
-    return locked;
-  }, [selectedClassId, selectedSubjectId, selectedTerm, selectedYear, isEditMode, existingScores, compiledResults, selectedClass, selectedAssignment]);
-
   // Check if there are any submitted scores to show status
   const hasSubmittedScores = useMemo(() => {
     return existingScores.some(s => s.status === 'Submitted');
@@ -467,7 +447,7 @@ export function ScoreEntryPage() {
             };
           }
         });
-        console.log('Updated scoresData (preserving user input):', updated);
+        //console.log('Updated scoresData (preserving user input):', updated);
         return updated;
       });
     }
@@ -475,17 +455,27 @@ export function ScoreEntryPage() {
 
   // Debug: Force reload scores when component mounts
   useEffect(() => {
-    console.log('ScoreEntryPage mounted, reloading scores from database...');
-    // This will trigger the existingScores to update
+    //console.log('ScoreEntryPage mounted, reloading scores from database...');
+    // This will trigger to existingScores to update
     const reloadScores = async () => {
       try {
-        await loadScoresFromAPI();
+        await loadScoresFromAPI(selectedTerm, selectedYear);
       } catch (error) {
-        console.error('Failed to reload scores:', error);
+        //console.error('Failed to reload scores:', error);
       }
     };
     reloadScores();
   }, []); // Only run once on mount
+
+  // Remove debug console logs for production
+  useEffect(() => {
+    // Disable debug logs in production
+    if (process.env.NODE_ENV === 'production') {
+      console.log = () => {};
+      console.warn = () => {};
+      console.error = () => {};
+    }
+  }, []);
 
   const handleScoreChange = (studentId: number, field: 'ca1' | 'ca2' | 'exam', value: string) => {
     const numValue = parseFloat(value);
@@ -650,7 +640,7 @@ export function ScoreEntryPage() {
       await loadScoresFromAPI();
       
     } catch (error) {
-      console.error('Error submitting scores:', error);
+      //console.error('Error submitting scores:', error);
       toast.error('Failed to submit scores. Please try again.');
     }
   };
@@ -906,9 +896,9 @@ export function ScoreEntryPage() {
     }
 
     try {
-      console.log('Attempting to resubmit', resubmittedCount, 'rejected scores...');
+      //console.log('Attempting to resubmit', resubmittedCount, 'rejected scores...');
       await Promise.all(updatePromises);
-      console.log('All rejected scores resubmitted successfully');
+      //console.log('All rejected scores resubmitted successfully');
       
       toast.success(`Rejected scores resubmitted successfully! ${resubmittedCount} score(s) corrected and sent for review.`);
       
@@ -922,7 +912,7 @@ export function ScoreEntryPage() {
       // Switch back to normal mode after resubmission
       setIsEditMode(false);
     } catch (error: unknown) {
-      console.error('Error resubmitting scores:', error);
+      //console.error('Error resubmitting scores:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       toast.error(`Failed to resubmit scores: ${errorMessage}`);
     }
@@ -1004,7 +994,7 @@ export function ScoreEntryPage() {
 
             const expectedColumns = isCrecheClass ? 5 : 7;
             if (parts.length < expectedColumns) {
-              console.warn(`Line ${index + 2}: Insufficient columns (${parts.length} found, ${expectedColumns} expected)`);
+              //console.warn(`Line ${index + 2}: Insufficient columns (${parts.length} found, ${expectedColumns} expected)`);
               errorCount++;
               return;
             }
@@ -1022,7 +1012,7 @@ export function ScoreEntryPage() {
             // Find student by registration number
             const student = classStudents.find(s => s.admissionNumber === regId);
             if (!student) {
-              console.warn(`Line ${index + 2}: Student with Reg ID '${regId}' not found`);
+              //console.warn(`Line ${index + 2}: Student with Reg ID '${regId}' not found`);
               errorCount++;
               return;
             }
@@ -1066,7 +1056,7 @@ export function ScoreEntryPage() {
               }
               
               if (expectedTotal && Math.abs(parseFloat(total) - parseFloat(expectedTotal)) > 0.01) {
-                console.warn(`Line ${index + 2}: Total mismatch (expected: ${expectedTotal}, provided: ${total})`);
+                //console.warn(`Line ${index + 2}: Total mismatch (expected: ${expectedTotal}, provided: ${total})`);
                 // Don't fail import for total mismatch, just warn
               }
             }
@@ -1078,7 +1068,7 @@ export function ScoreEntryPage() {
             };
             importedCount++;
           } catch (error) {
-            console.error(`Line ${index + 2}: Error processing line - ${error}`);
+            //console.error(`Line ${index + 2}: Error processing line - ${error}`);
             errorCount++;
           }
         });
@@ -1097,7 +1087,7 @@ export function ScoreEntryPage() {
           toast.info("No valid student records found in CSV");
         }
       } catch (error) {
-        console.error('CSV import error:', error);
+        //console.error('CSV import error:', error);
         toast.error('Failed to process CSV file. Please check file format.');
       }
     };
@@ -1130,7 +1120,7 @@ export function ScoreEntryPage() {
           <div>
             <h2 className="text-[#2563EB] mb-1">✏️ STUDENTS ASSESSMENT SCORE</h2>
             <p className="text-[#6B7280]">
-              {currentTerm.toUpperCase()} - {currentAcademicYear}
+              {currentTerm?.toUpperCase() || ''} - {currentAcademicYear || ''}
             </p>
           </div>
           
@@ -1448,28 +1438,22 @@ export function ScoreEntryPage() {
                     // Only lock when results have been compiled and submitted (isLocked handles this)
                     const isStudentLocked = isLocked;
                     
-                    // Always show submitted scores in input fields to avoid confusion
-                    // Keep them visible but locked until results are compiled and submitted
-                    const displayData = studentScore ? {
-                      ca1: studentScore.ca1.toString(),
-                      ca2: studentScore.ca2.toString(),
-                      exam: studentScore.exam.toString()
-                    } : data;
+                    // Bind inputs to scoresData so typing works (controlled inputs)
+                    // If scoresData hasn't been initialized yet for a student, fall back to existing score values.
+                    const displayData = (!scoresData[student.id] && studentScore)
+                      ? {
+                          ca1: studentScore.ca1?.toString() || '',
+                          ca2: studentScore.ca2?.toString() || '',
+                          exam: studentScore.exam?.toString() || ''
+                        }
+                      : data;
                     
                     const { total } = calculateScore(displayData.ca1, displayData.ca2, displayData.exam);
                     const hasScore = displayData.ca1 || displayData.ca2 || displayData.exam;
                     
-                    // Debug logging for first few students
-                    if (index < 3) {
-                      console.log(`Student ${index + 1} lock debug:`, {
-                        studentId: student.id,
-                        studentName: `${student.firstName} ${student.lastName}`,
-                        scoreStatus: studentScore?.status || 'No score',
-                        hasScore: !!studentScore,
-                        isEditMode,
-                        isStudentLocked,
-                        canEdit: !isStudentLocked
-                      });
+                    // Debug logging for first few students (disabled in production)
+                    if (index < 3 && process.env.NODE_ENV !== 'production') {
+                      // Student lock debug removed for production
                     }
 
                     return (

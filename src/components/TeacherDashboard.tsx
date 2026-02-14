@@ -50,6 +50,10 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
           if (isMounted && !success) {
             toast.error('Connection failed. Please refresh the page.');
           }
+        }).catch(error => {
+          if (isMounted) {
+            console.error('Connection reconnection failed:', error);
+          }
         });
       }
     };
@@ -64,8 +68,11 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   }, []);
 
   // Get current teacher data - Defensive check for teachers being an array
-  const currentTeacher = currentUser && Array.isArray(teachers) && teachers.length > 0 ? teachers.find(t => t?.id === String(currentUser.linked_id)) : null;
-  const teacherId = currentTeacher?.id;
+  const currentTeacher =
+    currentUser && Array.isArray(teachers) && teachers.length > 0
+      ? teachers.find(t => String(t?.id) === String(currentUser.linked_id))
+      : null;
+  const teacherId = currentTeacher ? Number(currentTeacher.id) : null;
   
   // Memoize responsibilities calculation to prevent excessive re-calculations
   const responsibilities = useMemo(() => {
@@ -88,9 +95,33 @@ export function TeacherDashboard({ onLogout }: TeacherDashboardProps) {
   }, [teacherId, classes, getTeacherResponsibilities]);
   
   // Memoize teacher classes calculation
-  const teacherClasses = useMemo(() => {
-    if (!teacherId) return [];
-    return getTeacherClasses(Number(teacherId));
+  const [teacherClasses, setTeacherClasses] = useState<Array<{
+    classId: number;
+    className: string;
+    classLevel: string;
+    studentCount: number;
+    subjects: Array<{
+      subjectId: number;
+      subjectName: string;
+      subjectCode: string;
+    }>;
+  }>>([]);
+  
+  useEffect(() => {
+    if (!teacherId) return;
+    
+    let isMounted = true;
+    getTeacherClasses(Number(teacherId)).then(classes => {
+      if (isMounted) {
+        setTeacherClasses(classes);
+      }
+    }).catch(error => {
+      if (isMounted) {
+        console.error('Failed to load teacher classes:', error);
+      }
+    });
+    
+    return () => { isMounted = false; };
   }, [teacherId, getTeacherClasses]);
   
   // Memoize class teacher status calculation

@@ -4,9 +4,25 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Graceland Royal Academy</title>
+    <link rel="icon" type="image/jpeg" href="/assets/images/school-logo.jpg" />
+    <link rel="shortcut icon" type="image/jpeg" href="/assets/images/school-logo.jpg" />
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (function () {
+        function suppress(event) {
+          try {
+            if (event && typeof event.preventDefault === 'function') event.preventDefault();
+            if (event && typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+          } catch (e) {}
+          return true;
+        }
+
+        window.onunhandledrejection = suppress;
+        window.addEventListener('unhandledrejection', suppress);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

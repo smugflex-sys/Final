@@ -71,7 +71,34 @@ export function ScoreApprovalPage() {
 
   // Get current teacher data
   const currentTeacher = currentUser ? teachers.find(t => t.id === String(currentUser.linked_id)) : null;
-  const teacherClasses = currentTeacher ? getTeacherClasses(Number(currentTeacher.id)) : [];
+  const [teacherClasses, setTeacherClasses] = useState<Array<{
+    classId: number;
+    className: string;
+    classLevel: string;
+    studentCount: number;
+    subjects: Array<{
+      subjectId: number;
+      subjectName: string;
+      subjectCode: string;
+    }>;
+  }>>([]);
+  
+  useEffect(() => {
+    if (!currentTeacher) return;
+    
+    let isMounted = true;
+    getTeacherClasses(Number(currentTeacher.id)).then(classes => {
+      if (isMounted) {
+        setTeacherClasses(classes);
+      }
+    }).catch(error => {
+      if (isMounted) {
+        console.error('Failed to load teacher classes:', error);
+      }
+    });
+    
+    return () => { isMounted = false; };
+  }, [currentTeacher, getTeacherClasses]);
 
   // Real-time data refresh
   useEffect(() => {
@@ -159,8 +186,8 @@ export function ScoreApprovalPage() {
       class_name: classInfo ? classInfo.name : 'Unknown Class',
       teacher_name: teacher ? `${teacher.firstName} ${teacher.lastName}` : 'Unknown Teacher',
       class_id: assignment?.class_id || 0,
-      academic_year: score.academic_year || currentAcademicYear,
-      term: score.term || currentTerm
+      academic_year: score.academic_year || currentAcademicYear || undefined,
+      term: score.term || currentTerm || undefined
     };
   });
 

@@ -26,7 +26,7 @@ class TokenManagerImpl implements TokenManager {
       
       // If no token in storage and currentUser has token, set it
       if (!token && currentUser?.token) {
-        console.log('TokenManager: Setting token from currentUser');
+        
         setAuthToken(currentUser.token);
         token = currentUser.token;
       }
@@ -38,24 +38,24 @@ class TokenManagerImpl implements TokenManager {
           if (storedUser) {
             const user = JSON.parse(storedUser);
             if (user.token) {
-              console.log('TokenManager: Setting token from localStorage');
+              
               setAuthToken(user.token);
               token = user.token;
             }
           }
         } catch (error) {
-          console.error('TokenManager: Error parsing stored user:', error);
+          
           // Clear corrupted data
           localStorage.removeItem('currentUser');
         }
       }
       
       const isValid = this.isTokenValid();
-      console.log('TokenManager: Token availability:', !!token, 'Valid:', isValid);
+      
       
       return isValid;
     } catch (error) {
-      console.error('TokenManager: Error ensuring token:', error);
+      
       return false;
     }
   }
@@ -82,9 +82,9 @@ class TokenManagerImpl implements TokenManager {
   clearToken(): void {
     try {
       removeAuthToken();
-      console.log('TokenManager: Token cleared');
+      
     } catch (error) {
-      console.error('TokenManager: Error clearing token:', error);
+      
     }
   }
   
@@ -107,14 +107,14 @@ class TokenManagerImpl implements TokenManager {
           
           // Check if token is expired (with 1 minute buffer instead of 5 minutes)
           if (payload.exp && payload.exp < (currentTime - 60)) {
-            console.log('TokenManager: Token expired');
+            
             this.clearToken();
             return false;
           }
         }
         return true;
       } catch (error) {
-        console.error('TokenManager: Error parsing JWT, treating as valid:', error);
+        
         // Don't clear token on parse error, just treat as valid
         return true;
       }
